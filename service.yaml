@@ -1,0 +1,11 @@
+name: podcast-service
+version: 1.0.0
+owner: team-podcast
+api: ./openapi.yaml
+events: ./asyncapi.yaml
+auth:
+  oidc: https://auth2.sesamy.dev/.well-known/openid-configuration
+  required_scopes:
+    - podcast.read
+    - podcast.write
+    - podcast.publish

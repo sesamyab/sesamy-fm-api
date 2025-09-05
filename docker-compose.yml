@@ -1,0 +1,20 @@
+version: "3.8"
+
+services:
+  podcast-service:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - DATABASE_URL=file:/app/data/app.db
+      - JWT_SECRET=your-secret-key
+      - NODE_ENV=development
+      - LOG_LEVEL=info
+    volumes:
+      - ./data:/app/data
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:3000/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s

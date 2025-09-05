@@ -1,0 +1,49 @@
+name = "podcast-service"
+main = "dist/worker.js"
+compatibility_date = "2024-09-23"
+compatibility_flags = ["nodejs_compat"]
+
+# Environment variables (set these in Cloudflare dashboard or use wrangler secret)
+[vars]
+NODE_ENV = "development"
+PORT = "8787"
+R2_ENDPOINT = "https://podcast-media.sesamy.dev"
+
+# Secrets to be set with: wrangler secret put <name>
+# - JWT_SECRET
+# - DATABASE_URL (for production Turso database)
+# - R2_ACCESS_KEY_ID (for R2 pre-signed URLs)
+# - R2_SECRET_ACCESS_KEY (for R2 pre-signed URLs)
+# R2_ENDPOINT is set above as environment variable for custom domain
+
+# D1 Database binding
+[[d1_databases]]
+binding = "DB"
+database_name = "podcast-service-db"
+database_id = "a27b543a-696d-4726-9329-2a15578ac861"
+migrations_dir = "./drizzle"
+
+# R2 Storage binding
+[[r2_buckets]]
+binding = "BUCKET"
+bucket_name = "podcast-service-assets"
+preview_bucket_name = "podcast-service-assets"
+
+# Cron triggers for background task processing
+[triggers]
+crons = ["*/5 * * * *"]  # Run every 5 minutes
+
+[build]
+command = "tsc -p tsconfig.worker.json"
+
+# Development configuration
+[env.development]
+vars = { NODE_ENV = "development" }
+
+# Production configuration  
+[env.production]
+vars = { NODE_ENV = "production" }
+
+# Limits
+[limits]
+cpu_ms = 50000

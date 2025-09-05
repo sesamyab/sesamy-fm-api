@@ -1,0 +1,700 @@
+openapi: 3.0.0
+info:
+  title: Podcast Service API
+  version: 1.0.0
+  description: Service Standard v1 compliant Podcast Service API for managing podcast shows, episodes, and audio uploads.
+
+servers:
+  - url: http://localhost:3000
+    description: Development server
+
+security:
+  - Bearer: []
+
+components:
+  securitySchemes:
+    Bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    Show:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+        imageUrl:
+          type: string
+          format: uri
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - title
+        - description
+        - createdAt
+        - updatedAt
+
+    Episode:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        showId:
+          type: string
+          format: uuid
+        title:
+          type: string
+          maxLength: 255
+        description:
+          type: string
+          maxLength: 2000
+        audioUrl:
+          type: string
+          format: uri
+          nullable: true
+        published:
+          type: boolean
+        publishedAt:
+          type: string
+          format: date-time
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - showId
+        - title
+        - description
+        - published
+        - createdAt
+        - updatedAt
+
+    AudioUpload:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        episodeId:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+          format: int64
+          minimum: 1
+        mimeType:
+          type: string
+        url:
+          type: string
+          format: uri
+        uploadedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - episodeId
+        - fileName
+        - fileSize
+        - mimeType
+        - url
+        - uploadedAt
+
+    CreateShow:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        imageUrl:
+          type: string
+          format: uri
+      required:
+        - title
+        - description
+
+    UpdateShow:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        imageUrl:
+          type: string
+          format: uri
+
+    CreateEpisode:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        audioUrl:
+          type: string
+          format: uri
+      required:
+        - title
+        - description
+
+    UpdateEpisode:
+      type: object
+      properties:
+        title:
+          type: string
+          minLength: 1
+          maxLength: 255
+        description:
+          type: string
+          minLength: 1
+          maxLength: 2000
+        audioUrl:
+          type: string
+          format: uri
+
+    Problem:
+      type: object
+      properties:
+        type:
+          type: string
+        title:
+          type: string
+        status:
+          type: integer
+        detail:
+          type: string
+        instance:
+          type: string
+      required:
+        - type
+        - title
+        - status
+
+paths:
+  /:
+    get:
+      summary: Service information
+      description: Get service name and version
+      tags:
+        - service
+      security: []
+      responses:
+        "200":
+          description: Service information
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  name:
+                    type: string
+                  version:
+                    type: string
+
+  /openapi.json:
+    get:
+      summary: OpenAPI specification
+      description: Get the OpenAPI specification for this service
+      tags:
+        - service
+      security: []
+      responses:
+        "200":
+          description: OpenAPI specification
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /healthz:
+    get:
+      summary: Liveness probe
+      description: Check if the service is alive
+      tags:
+        - health
+      security: []
+      responses:
+        "200":
+          description: Service is alive
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  service:
+                    type: string
+                  version:
+                    type: string
+
+  /readyz:
+    get:
+      summary: Readiness probe
+      description: Check if the service is ready to serve requests
+      tags:
+        - health
+      security: []
+      responses:
+        "200":
+          description: Service is ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [healthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  service:
+                    type: string
+                  version:
+                    type: string
+        "503":
+          description: Service is not ready
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    enum: [unhealthy]
+                  timestamp:
+                    type: string
+                    format: date-time
+                  service:
+                    type: string
+                  version:
+                    type: string
+
+  /shows:
+    get:
+      summary: List shows
+      description: Get a paginated list of podcast shows
+      tags:
+        - shows
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: List of shows
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Show"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+    post:
+      summary: Create show
+      description: Create a new podcast show
+      tags:
+        - shows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateShow"
+      responses:
+        "201":
+          description: Created show
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Show"
+        "400":
+          description: Validation error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /shows/{show_id}:
+    parameters:
+      - name: show_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get show
+      description: Get a specific podcast show by ID
+      tags:
+        - shows
+      responses:
+        "200":
+          description: Show details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Show"
+        "404":
+          description: Show not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+    patch:
+      summary: Update show
+      description: Update an existing podcast show
+      tags:
+        - shows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateShow"
+      responses:
+        "200":
+          description: Updated show
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Show"
+        "404":
+          description: Show not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+    delete:
+      summary: Delete show
+      description: Delete an existing podcast show
+      tags:
+        - shows
+      responses:
+        "204":
+          description: Show deleted successfully
+        "404":
+          description: Show not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /shows/{show_id}/episodes:
+    parameters:
+      - name: show_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: List episodes
+      description: Get a paginated list of episodes for a show
+      tags:
+        - episodes
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 10
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+      responses:
+        "200":
+          description: List of episodes
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/Episode"
+
+    post:
+      summary: Create episode
+      description: Create a new episode for a show
+      tags:
+        - episodes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateEpisode"
+      responses:
+        "201":
+          description: Created episode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Episode"
+
+  /shows/{show_id}/episodes/{episode_id}:
+    parameters:
+      - name: show_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    get:
+      summary: Get episode
+      description: Get a specific episode by ID
+      tags:
+        - episodes
+      responses:
+        "200":
+          description: Episode details
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Episode"
+        "404":
+          description: Episode not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+    patch:
+      summary: Update episode
+      description: Update an existing episode
+      tags:
+        - episodes
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateEpisode"
+      responses:
+        "200":
+          description: Updated episode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Episode"
+        "404":
+          description: Episode not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+    delete:
+      summary: Delete episode
+      description: Delete an existing episode
+      tags:
+        - episodes
+      responses:
+        "204":
+          description: Episode deleted successfully
+        "404":
+          description: Episode not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /shows/{show_id}/episodes/{episode_id}/publish:
+    parameters:
+      - name: show_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      summary: Publish episode
+      description: Publish an episode to make it available to the public
+      tags:
+        - episodes
+      responses:
+        "200":
+          description: Published episode
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Episode"
+        "404":
+          description: Episode not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /shows/{show_id}/episodes/{episode_id}/audio:
+    parameters:
+      - name: show_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: episode_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      summary: Upload audio
+      description: Upload an audio file for an episode
+      tags:
+        - audio
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                audio:
+                  type: string
+                  format: binary
+                  description: Audio file to upload
+              required:
+                - audio
+      responses:
+        "201":
+          description: Audio uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudioUpload"
+        "404":
+          description: Episode not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+    get:
+      summary: Get audio metadata
+      description: Get metadata for an episode's audio file
+      tags:
+        - audio
+      responses:
+        "200":
+          description: Audio metadata
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AudioUpload"
+        "404":
+          description: Audio or episode not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+tags:
+  - name: service
+    description: Service information endpoints
+  - name: health
+    description: Health check endpoints
+  - name: shows
+    description: Podcast shows management
+  - name: episodes
+    description: Episode management
+  - name: audio
+    description: Audio file management
