@@ -9,6 +9,7 @@ export const CreateEpisodeSchema = z.object({
     .max(2000, "Description too long"),
   imageUrl: z.nullable(z.string().url()).optional(),
   audioUrl: z.nullable(z.string().url()).optional(),
+  transcriptUrl: z.nullable(z.string().url()).optional(),
 });
 
 export const UpdateEpisodeSchema = z.object({
@@ -16,6 +17,7 @@ export const UpdateEpisodeSchema = z.object({
   description: z.string().min(1).max(2000).optional(),
   imageUrl: z.nullable(z.string().url()).optional(),
   audioUrl: z.nullable(z.string().url()).optional(),
+  transcriptUrl: z.nullable(z.string().url()).optional(),
 });
 
 // Response schemas
@@ -26,6 +28,7 @@ export const EpisodeSchema = z.object({
   description: z.string(),
   imageUrl: z.string().nullable(),
   audioUrl: z.string().nullable(),
+  transcriptUrl: z.string().nullable(),
   published: z.boolean().nullable(),
   publishedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),

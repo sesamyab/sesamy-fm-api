@@ -12,11 +12,13 @@ import { TaskProcessor } from "./tasks/processor";
 interface CloudflareEnv {
   DB: D1Database;
   BUCKET: R2Bucket;
+  AI: Ai;
   JWT_SECRET?: string;
   NODE_ENV?: string;
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
   R2_ENDPOINT?: string; // Full R2 endpoint URL with account ID
+  TASK_QUEUE?: Queue;
 }
 
 export default {
@@ -31,7 +33,9 @@ export default {
       env.BUCKET,
       env.R2_ACCESS_KEY_ID,
       env.R2_SECRET_ACCESS_KEY,
-      env.R2_ENDPOINT
+      env.R2_ENDPOINT,
+      env.AI,
+      env.TASK_QUEUE
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;
@@ -47,7 +51,23 @@ export default {
     ctx: ExecutionContext
   ): Promise<void> {
     // Process background tasks
-    const taskProcessor = new TaskProcessor(env.DB);
+    const taskProcessor = new TaskProcessor(env.DB, env.BUCKET, env.AI);
     await taskProcessor.handleScheduledTask(event);
+  },
+  async queue(
+    batch: { messages: Array<{ body: any }> },
+    env: CloudflareEnv,
+    ctx: ExecutionContext
+  ) {
+    // Process messages from TASK_QUEUE
+    const taskProcessor = new TaskProcessor(env.DB, env.BUCKET, env.AI);
+    for (const msg of batch.messages) {
+      try {
+        // Each message should contain a task payload
+        await taskProcessor.processTasks(1); // You may want to pass the task info for more granular control
+      } catch (err) {
+        console.error("Error processing queue message:", err);
+      }
+    }
   },
 };

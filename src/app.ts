@@ -11,6 +11,7 @@ import { registerHealthRoutes } from "./health/routes";
 import { registerShowRoutes } from "./shows/routes";
 import { registerEpisodeRoutes } from "./episodes/routes";
 import { registerAudioRoutes } from "./audio/routes";
+import { registerFeedRoutes } from "./feed/routes";
 import { createTaskRoutes } from "./tasks/routes";
 
 // Services
@@ -22,13 +23,16 @@ import { EpisodeService } from "./episodes/service";
 import { AudioRepository } from "./audio/repository";
 import { AudioService } from "./audio/service";
 import { ImageService } from "./images/service";
+import { TaskService } from "./tasks/service";
 
 export function createApp(
   database?: D1Database,
   bucket?: R2Bucket,
   r2AccessKeyId?: string,
   r2SecretAccessKey?: string,
-  r2Endpoint?: string
+  r2Endpoint?: string,
+  ai?: Ai,
+  queue?: Queue
 ) {
   const app = new OpenAPIHono();
 
@@ -39,7 +43,12 @@ export function createApp(
   const showService = new ShowService(showRepository, eventPublisher);
 
   const episodeRepository = new EpisodeRepository(database);
-  const episodeService = new EpisodeService(episodeRepository, eventPublisher);
+  const taskService = new TaskService(database, bucket, ai, queue);
+  const episodeService = new EpisodeService(
+    episodeRepository,
+    eventPublisher,
+    taskService
+  );
 
   const audioService = new AudioService(
     database,
@@ -47,7 +56,8 @@ export function createApp(
     eventPublisher,
     r2AccessKeyId,
     r2SecretAccessKey,
-    r2Endpoint
+    r2Endpoint,
+    taskService
   );
 
   const imageService =
@@ -91,6 +101,7 @@ export function createApp(
     ],
     tags: [
       { name: "health", description: "Health check endpoints" },
+      { name: "feeds", description: "RSS feed endpoints (no auth required)" },
       { name: "shows", description: "Podcast shows management" },
       { name: "episodes", description: "Episode management" },
       { name: "audio", description: "Audio file management" },
@@ -104,15 +115,24 @@ export function createApp(
   // Health routes (no auth required)
   registerHealthRoutes(app, database);
 
+  // RSS feeds don't require authentication (public access)
+  registerFeedRoutes(app, showService, episodeRepository, audioService);
+
   // All other routes require authentication
-  app.use("/shows/*", authMiddleware);
+  app.use("/shows/*", (c, next) => {
+    // Skip auth for RSS feed endpoints
+    if (c.req.path.endsWith("/feed")) {
+      return next();
+    }
+    return authMiddleware(c, next);
+  });
   app.use("/tasks/*", authMiddleware);
 
   // Register API routes
   registerShowRoutes(app, showService, audioService, imageService);
   registerEpisodeRoutes(app, episodeService, audioService, imageService);
   registerAudioRoutes(app, audioService);
-  app.route("/", createTaskRoutes(database));
+  app.route("/", createTaskRoutes(database, bucket, ai, queue));
 
   return app;
 }

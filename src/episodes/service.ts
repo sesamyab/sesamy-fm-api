@@ -2,11 +2,13 @@ import { v4 as uuidv4 } from "uuid";
 import { EpisodeRepository } from "./repository";
 import { CreateEpisode, UpdateEpisode, Pagination } from "./schemas";
 import { EventPublisher } from "../events/publisher";
+import { TaskService } from "../tasks/service";
 
 export class EpisodeService {
   constructor(
     private episodeRepository: EpisodeRepository,
-    private eventPublisher: EventPublisher
+    private eventPublisher: EventPublisher,
+    private taskService?: TaskService
   ) {}
 
   async getEpisodesByShowId(showId: string, pagination: Pagination) {
@@ -68,5 +70,36 @@ export class EpisodeService {
     );
 
     return true;
+  }
+
+  async createTranscriptionTask(showId: string, episodeId: string) {
+    if (!this.taskService) {
+      throw new Error("Task service not available");
+    }
+
+    const episode = await this.episodeRepository.findById(showId, episodeId);
+    if (!episode) {
+      throw new Error("Episode not found");
+    }
+
+    if (!episode.audioUrl) {
+      throw new Error("Episode has no audio URL");
+    }
+
+    // Create transcription task
+    const task = await this.taskService.createTask("transcribe", {
+      episodeId: episode.id,
+      audioUrl: episode.audioUrl,
+      showId: episode.showId,
+    });
+
+    // Publish event
+    await this.eventPublisher.publish(
+      "episode.transcription_requested",
+      { episodeId: episode.id, taskId: task.id },
+      episode.id
+    );
+
+    return task;
   }
 }

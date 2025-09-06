@@ -31,6 +31,16 @@ export class EpisodeRepository {
     return result[0] || null;
   }
 
+  async findByIdOnly(episodeId: string) {
+    const result = await this.db
+      .select()
+      .from(episodes)
+      .where(eq(episodes.id, episodeId))
+      .limit(1);
+
+    return result[0] || null;
+  }
+
   async create(showId: string, data: CreateEpisode & { id: string }) {
     const now = new Date().toISOString();
 
@@ -66,6 +76,29 @@ export class EpisodeRepository {
         updatedAt: updatedEpisode.updatedAt,
       })
       .where(and(eq(episodes.showId, showId), eq(episodes.id, episodeId)));
+
+    return updatedEpisode;
+  }
+
+  async updateByIdOnly(episodeId: string, data: UpdateEpisode) {
+    const existing = await this.findByIdOnly(episodeId);
+    if (!existing) {
+      throw new NotFoundError("Episode not found");
+    }
+
+    const updatedEpisode = {
+      ...existing,
+      ...data,
+      updatedAt: new Date().toISOString(),
+    };
+
+    await this.db
+      .update(episodes)
+      .set({
+        ...data,
+        updatedAt: updatedEpisode.updatedAt,
+      })
+      .where(eq(episodes.id, episodeId));
 
     return updatedEpisode;
   }

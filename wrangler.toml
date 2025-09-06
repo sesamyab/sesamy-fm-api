@@ -29,6 +29,18 @@ binding = "BUCKET"
 bucket_name = "podcast-service-assets"
 preview_bucket_name = "podcast-service-assets"
 
+# Workers AI binding
+[ai]
+binding = "AI"
+
+# Queue bindings for background task processing
+[[queues.producers]]
+binding = "TASK_QUEUE"
+queue = "podcast-tasks"
+
+[[queues.consumers]]
+queue = "podcast-tasks"
+
 # Cron triggers for background task processing
 [triggers]
 crons = ["*/5 * * * *"]  # Run every 5 minutes
@@ -47,3 +59,13 @@ vars = { NODE_ENV = "production" }
 # Limits
 [limits]
 cpu_ms = 50000
+
+# Observability - Enable logging and analytics
+[observability]
+enabled = true
+
+# Enable tail logs for development
+[dev]
+inspector_port = 9229
+local_protocol = "https"
+upstream_protocol = "https"

@@ -4,8 +4,8 @@ export class TaskProcessor {
   private taskService: TaskService;
   private isProcessing = false;
 
-  constructor(database?: D1Database) {
-    this.taskService = new TaskService(database);
+  constructor(database?: D1Database, bucket?: R2Bucket, ai?: Ai) {
+    this.taskService = new TaskService(database, bucket, ai);
   }
 
   async processTasks(batchSize = 5): Promise<{

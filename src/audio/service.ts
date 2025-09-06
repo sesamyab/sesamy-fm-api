@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from "uuid";
 import { AudioRepository } from "./repository";
 import { EventPublisher } from "../events/publisher";
 import { EpisodeRepository } from "../episodes/repository";
+import { TaskService } from "../tasks/service";
 import { NotFoundError } from "../common/errors";
 
 // AWS Signature Version 4 implementation for R2 pre-signed URLs
@@ -167,6 +168,7 @@ export class AudioService {
   private audioRepo: AudioRepository;
   private eventPublisher: EventPublisher;
   private episodeRepo: EpisodeRepository;
+  private taskService?: TaskService;
   private bucket: R2Bucket;
   private presignedUrlGenerator: R2PreSignedUrlGenerator | null = null;
 
@@ -176,11 +178,13 @@ export class AudioService {
     eventPublisher?: EventPublisher,
     r2AccessKeyId?: string,
     r2SecretAccessKey?: string,
-    r2Endpoint?: string
+    r2Endpoint?: string,
+    taskService?: TaskService
   ) {
     this.audioRepo = new AudioRepository(database);
     this.episodeRepo = new EpisodeRepository(database);
     this.eventPublisher = eventPublisher || new EventPublisher();
+    this.taskService = taskService;
     this.bucket = bucket as R2Bucket;
 
     // Initialize pre-signed URL generator if credentials are available
@@ -283,6 +287,63 @@ export class AudioService {
       },
       audioUpload.id
     );
+
+    // Enqueue tasks for uploaded audio
+    if (this.taskService) {
+      console.log(
+        `Creating tasks for uploaded audio: episodeId=${episodeId}, audioId=${audioId}`
+      );
+
+      // Create encoding task
+      await this.taskService.createTask("encode", {
+        audioId,
+        episodeId,
+        showId,
+        url,
+      });
+      console.log(`Created encode task for episode ${episodeId}`);
+
+      // Create transcription task
+      await this.taskService.createTask("transcribe", {
+        episodeId,
+        showId,
+        audioUrl: signedUrl, // Use signed URL for transcription service access
+      });
+      console.log(`Created transcribe task for episode ${episodeId}`);
+    } else if (typeof (globalThis as any).TASK_QUEUE !== "undefined") {
+      console.log(
+        `Using queue for tasks: episodeId=${episodeId}, audioId=${audioId}`
+      );
+
+      // Fallback to queue-based approach
+      await (globalThis as any).TASK_QUEUE.send({
+        type: "encode",
+        payload: {
+          audioId,
+          episodeId,
+          showId,
+          url,
+        },
+      });
+
+      // Also enqueue transcription task for uploaded audio
+      await (globalThis as any).TASK_QUEUE.send({
+        type: "transcribe",
+        payload: {
+          episodeId,
+          showId,
+          audioUrl: signedUrl, // Use signed URL for transcription service access
+        },
+      });
+      console.log(
+        `Sent encode and transcribe tasks to queue for episode ${episodeId}`
+      );
+    } else {
+      console.warn(
+        `No task processing available - TaskService: ${!!this
+          .taskService}, Queue: ${typeof (globalThis as any).TASK_QUEUE}`
+      );
+    }
 
     // Return upload info with signed URL for immediate use
     return {

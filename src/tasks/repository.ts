@@ -97,4 +97,11 @@ export class TaskRepository {
       error,
     });
   }
+
+  async resetForRetry(id: number): Promise<Task | null> {
+    return await this.updateStatus(id, "pending", {
+      error: undefined,
+      result: undefined,
+    });
+  }
 }

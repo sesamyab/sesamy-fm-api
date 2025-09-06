@@ -1,5 +1,8 @@
 import { TaskRepository } from "./repository.js";
+import { EpisodeRepository } from "../episodes/repository.js";
+import { EventPublisher } from "../events/publisher.js";
 import type { Task, NewTask } from "../database/schema.js";
+import { v4 as uuidv4 } from "uuid";
 
 export type TaskType = "transcribe" | "encode" | "publish" | "notification";
 
@@ -13,18 +16,36 @@ export interface TaskResult {
 
 export class TaskService {
   private repository: TaskRepository;
+  private episodeRepository: EpisodeRepository;
+  private eventPublisher: EventPublisher;
+  private bucket?: R2Bucket;
+  private ai?: Ai;
+  private queue?: Queue;
 
-  constructor(database?: D1Database) {
+  constructor(
+    database?: D1Database,
+    bucket?: R2Bucket,
+    ai?: Ai,
+    queue?: Queue
+  ) {
     this.repository = new TaskRepository(database);
+    this.episodeRepository = new EpisodeRepository(database);
+    this.eventPublisher = new EventPublisher();
+    this.bucket = bucket;
+    this.ai = ai;
+    this.queue = queue;
   }
 
   async createTask(type: TaskType, payload?: TaskPayload): Promise<Task> {
+    const now = new Date().toISOString();
     return await this.repository.create({
       type,
-      payload: payload ? JSON.stringify(payload) : undefined,
       status: "pending",
       attempts: 0,
-    });
+      createdAt: now,
+      updatedAt: now,
+      payload: payload ? JSON.stringify(payload) : undefined,
+    } as any);
   }
 
   async getTask(id: number): Promise<Task | null> {
@@ -41,6 +62,33 @@ export class TaskService {
     for (const task of pendingTasks) {
       await this.processTask(task);
     }
+  }
+
+  async retryTask(id: number): Promise<Task> {
+    const task = await this.repository.findById(id);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    // Reset the task status to pending and clear errors
+    const retriedTask = await this.repository.resetForRetry(id);
+    if (!retriedTask) {
+      throw new Error("Failed to reset task for retry");
+    }
+
+    // Create a new queue message if queue is available
+    if (this.queue) {
+      await this.queue.send({
+        type: "task",
+        taskId: id,
+      });
+    } else {
+      console.warn(
+        "Queue not available, task will only be reset to pending status"
+      );
+    }
+
+    return retriedTask;
   }
 
   private async processTask(task: Task): Promise<void> {
@@ -89,18 +137,92 @@ export class TaskService {
 
   // Task handler stubs - implement these with actual logic
   private async handleTranscribe(payload: TaskPayload): Promise<TaskResult> {
-    // Stub for audio transcription
-    // In a real implementation, this would call a transcription service
-    console.log("Processing transcribe task:", payload);
+    if (!this.ai || !this.bucket) {
+      throw new Error(
+        "AI and R2 bucket bindings are required for transcription"
+      );
+    }
 
-    // Simulate processing time
-    await new Promise((resolve) => setTimeout(resolve, 1000));
+    const { episodeId, audioUrl } = payload;
+    if (!episodeId || !audioUrl) {
+      throw new Error(
+        "Episode ID and audio URL are required for transcription"
+      );
+    }
 
-    return {
-      transcript: "This is a sample transcript",
-      confidence: 0.95,
-      duration: 120,
-    };
+    console.log("Processing transcribe task:", { episodeId, audioUrl });
+
+    try {
+      // Fetch the audio file
+      const audioResponse = await fetch(audioUrl);
+      if (!audioResponse.ok) {
+        throw new Error(
+          `Failed to fetch audio file: ${audioResponse.statusText}`
+        );
+      }
+
+      const audioArrayBuffer = await audioResponse.arrayBuffer();
+
+      // Use Cloudflare Workers AI Whisper model for transcription
+      const transcriptResponse = await this.ai.run("@cf/openai/whisper", {
+        audio: Array.from(new Uint8Array(audioArrayBuffer)),
+      });
+
+      if (!transcriptResponse || !transcriptResponse.text) {
+        throw new Error("Transcription failed - no text returned");
+      }
+
+      const transcriptText = transcriptResponse.text;
+
+      // Generate a unique filename for the transcript
+      const transcriptId = uuidv4();
+      const transcriptKey = `transcripts/${episodeId}/${transcriptId}.txt`;
+
+      // Store transcript in R2
+      await this.bucket.put(transcriptKey, transcriptText, {
+        httpMetadata: {
+          contentType: "text/plain",
+          contentLanguage: "en",
+        },
+        customMetadata: {
+          episodeId,
+          createdAt: new Date().toISOString(),
+        },
+      });
+
+      // Construct the transcript URL
+      const transcriptUrl = `${
+        process.env.R2_ENDPOINT || "https://podcast-media.sesamy.dev"
+      }/${transcriptKey}`;
+
+      // Update the episode with the transcript URL
+      await this.episodeRepository.updateByIdOnly(episodeId, {
+        transcriptUrl,
+      });
+
+      // Publish completion event
+      await this.eventPublisher.publish(
+        "episode.transcription_completed",
+        { episodeId, transcriptUrl, textLength: transcriptText.length },
+        episodeId
+      );
+
+      console.log("Transcription completed:", {
+        episodeId,
+        transcriptUrl,
+        textLength: transcriptText.length,
+      });
+
+      return {
+        transcriptUrl,
+        transcriptKey,
+        textLength: transcriptText.length,
+        completedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error("Transcription failed:", error);
+      throw error;
+    }
   }
 
   private async handleEncode(payload: TaskPayload): Promise<TaskResult> {

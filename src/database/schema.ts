@@ -22,6 +22,7 @@ export const episodes = sqliteTable("episodes", {
   description: text("description").notNull(),
   imageUrl: text("image_url"),
   audioUrl: text("audio_url"),
+  transcriptUrl: text("transcript_url"),
   published: integer("published", { mode: "boolean" }).default(false),
   publishedAt: text("published_at"),
   createdAt: text("created_at").notNull(),

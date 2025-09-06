@@ -1,5 +1,22 @@
 # Podcast Service - Cloudflare Workers Edition
 
+# Storage of Images and Audio Files
+
+Uploaded images and audio files are stored in Cloudflare R2, a highly durable and scalable object storage service. This allows for efficient storage and retrieval of large media files, making the service suitable for podcast hosting and distribution. When you upload an image or audio file via the API, it is automatically saved to R2 and referenced in the database.
+
+# Task Processing and Queue System
+
+The service uses a task queue system for background processing. When a new task is created (for example, encoding an uploaded image or audio file), a queue message is generated. This message triggers a worker process that picks up the task and performs the required operation asynchronously. This architecture enables efficient handling of resource-intensive operations, such as media encoding, without blocking API requests.
+
+Typical workflow:
+
+1. A client creates a task via the `POST /tasks` endpoint (e.g., to encode an uploaded file).
+2. The service creates a queue message for the new task.
+3. A worker is triggered by the queue and processes the task (e.g., encoding, publishing, notifications).
+4. The task status is updated and results are stored in the database.
+
+This system is used for encoding uploaded images and audio files, as well as other background operations.
+
 A **Service Standard v1** compliant podcast service built with **Hono**, **Zod OpenAPI**, **SQLite**, and **Drizzle ORM**, optimized for **Cloudflare Workers** edge deployment.
 
 ## Features
@@ -143,6 +160,10 @@ Authorization: Bearer <token>
 - `GET /healthz` — Liveness probe
 - `GET /readyz` — Readiness probe
 
+### RSS Feeds
+
+- `GET /feeds/{show_id}` — Generate RSS feed for the show (no auth required)
+
 ### Shows
 
 - `GET /shows` — List shows
@@ -158,6 +179,12 @@ Authorization: Bearer <token>
 - `GET /shows/{show_id}/episodes/{episode_id}` — Get episode
 - `PATCH /shows/{show_id}/episodes/{episode_id}` — Update episode
 - `DELETE /shows/{show_id}/episodes/{episode_id}` — Delete episode
+
+### Tasks
+
+- `POST /tasks` — Create a new background processing task
+- `GET /tasks` — List tasks (supports filtering by status, limit, offset)
+- `GET /tasks/{task_id}` — Get details of a specific task by ID
 
 ### Publishing
 

@@ -138,6 +138,17 @@ export class ImageService {
 
       console.log(`[ImageService] Updated show ${showId} with new image URL`);
 
+      // Enqueue encoding task for uploaded image
+      if (typeof (globalThis as any).TASK_QUEUE !== "undefined") {
+        await (globalThis as any).TASK_QUEUE.send({
+          type: "encode",
+          payload: {
+            imageId: fileId,
+            showId,
+            url: r2Url,
+          },
+        });
+      }
       return result;
     } catch (error: any) {
       console.error(
@@ -248,6 +259,19 @@ export class ImageService {
         updatedAt: new Date().toISOString(),
       })
       .where(eq(episodes.id, episodeId));
+
+    // Enqueue encoding task for uploaded image
+    if (typeof (globalThis as any).TASK_QUEUE !== "undefined") {
+      await (globalThis as any).TASK_QUEUE.send({
+        type: "encode",
+        payload: {
+          imageId: fileId,
+          episodeId,
+          showId,
+          url: r2Url,
+        },
+      });
+    }
 
     console.log(
       `[ImageService] Updated episode ${episodeId} with new image URL`

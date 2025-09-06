@@ -137,9 +137,46 @@ const getTaskRoute = createRoute({
   },
 });
 
-export const createTaskRoutes = (database?: D1Database) => {
+// Retry task route
+const retryTaskRoute = createRoute({
+  method: "post",
+  path: "/tasks/{task_id}/retry",
+  tags: ["tasks"],
+  summary: "Retry a failed task",
+  description: "Reset a failed task to pending status and queue it for retry",
+  security: [{ Bearer: [] }],
+  request: {
+    params: TaskParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Task retried successfully",
+      content: {
+        "application/json": {
+          schema: TaskSchema,
+        },
+      },
+    },
+    404: {
+      description: "Task not found",
+    },
+    401: {
+      description: "Unauthorized",
+    },
+    400: {
+      description: "Task cannot be retried",
+    },
+  },
+});
+
+export const createTaskRoutes = (
+  database?: D1Database,
+  bucket?: R2Bucket,
+  ai?: Ai,
+  queue?: Queue
+) => {
   const app = new OpenAPIHono();
-  const taskService = new TaskService(database);
+  const taskService = new TaskService(database, bucket, ai, queue);
 
   // Helper function to serialize task data for API response
   const serializeTask = (task: any) => ({
@@ -148,8 +185,8 @@ export const createTaskRoutes = (database?: D1Database) => {
     result: task.result ? JSON.parse(task.result) : null,
   });
 
-  // Apply authentication middleware
-  app.use("*", requireScopes(["podcast.read", "podcast.write"]));
+  // Apply authentication middleware - using colon notation to match user permissions
+  app.use("*", requireScopes(["podcast:read", "podcast:write"]));
 
   // Create task
   app.openapi(createTaskRoute, async (c) => {
@@ -183,6 +220,24 @@ export const createTaskRoutes = (database?: D1Database) => {
     }
 
     return c.json(serializeTask(task));
+  });
+
+  // Retry task
+  app.openapi(retryTaskRoute, async (c) => {
+    const { task_id } = c.req.valid("param");
+
+    try {
+      const task = await taskService.retryTask(task_id);
+      return c.json(serializeTask(task));
+    } catch (error) {
+      if (error instanceof Error) {
+        if (error.message === "Task not found") {
+          throw new NotFoundError(`Task with ID ${task_id} not found`);
+        }
+        throw new HTTPException(400, { message: error.message });
+      }
+      throw new HTTPException(500, { message: "Internal server error" });
+    }
   });
 
   return app;
