@@ -7,6 +7,7 @@
 
 import { createApp } from "./app";
 import { TaskProcessor } from "./tasks/processor";
+import { EncodingContainer } from "./encoding/container";
 
 // Interface for Cloudflare Worker environment
 interface CloudflareEnv {
@@ -19,6 +20,7 @@ interface CloudflareEnv {
   R2_SECRET_ACCESS_KEY?: string;
   R2_ENDPOINT?: string; // Full R2 endpoint URL with account ID
   TASK_QUEUE?: Queue;
+  ENCODING_CONTAINER: DurableObjectNamespace;
 }
 
 export default {
@@ -35,7 +37,8 @@ export default {
       env.R2_SECRET_ACCESS_KEY,
       env.R2_ENDPOINT,
       env.AI,
-      env.TASK_QUEUE
+      env.TASK_QUEUE,
+      env.ENCODING_CONTAINER
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;
@@ -71,3 +74,6 @@ export default {
     }
   },
 };
+
+// Export the EncodingContainer for Cloudflare Workers
+export { EncodingContainer };

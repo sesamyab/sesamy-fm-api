@@ -13,6 +13,8 @@ import { registerEpisodeRoutes } from "./episodes/routes";
 import { registerAudioRoutes } from "./audio/routes";
 import { registerFeedRoutes } from "./feed/routes";
 import { createTaskRoutes } from "./tasks/routes";
+import { createEncodingRoutes } from "./encoding/routes";
+import { EncodingContainer } from "./encoding/container";
 
 // Services
 import { EventPublisher } from "./events/publisher";
@@ -45,7 +47,8 @@ export function createApp(
   r2SecretAccessKey?: string,
   r2Endpoint?: string,
   ai?: Ai,
-  queue?: Queue
+  queue?: Queue,
+  encodingContainer?: DurableObjectNamespace
 ) {
   const app = new OpenAPIHono();
 
@@ -217,6 +220,7 @@ export function createApp(
   registerEpisodeRoutes(app, episodeService, audioService, imageService);
   registerAudioRoutes(app, audioService);
   app.route("/", createTaskRoutes(database, bucket, ai, queue));
+  app.route("/", createEncodingRoutes(encodingContainer));
 
   return app;
 }

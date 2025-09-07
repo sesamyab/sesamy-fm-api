@@ -41,6 +41,22 @@ queue = "podcast-tasks"
 [[queues.consumers]]
 queue = "podcast-tasks"
 
+# Container configuration for encoding service
+[[containers]]
+class_name = "EncodingContainer"
+image = "./Dockerfile.encoding"
+max_instances = 10
+
+# Durable Objects bindings
+[[durable_objects.bindings]]
+class_name = "EncodingContainer"
+name = "ENCODING_CONTAINER"
+
+# Durable Objects migrations
+[[migrations]]
+new_sqlite_classes = ["EncodingContainer"]
+tag = "v1"
+
 # Cron triggers for background task processing
 [triggers]
 crons = ["*/5 * * * *"]  # Run every 5 minutes
