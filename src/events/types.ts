@@ -17,4 +17,5 @@ export type PodcastEventType =
   | "episode.published"
   | "episode.transcription_requested"
   | "episode.transcription_completed"
+  | "episode.encoding_completed"
   | "audio.uploaded";

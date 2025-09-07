@@ -47,6 +47,13 @@ const TaskParamsSchema = z.object({
   task_id: z.coerce.number(),
 });
 
+// Test encoding request schema
+const TestEncodeSchema = z.object({
+  audioUrl: z.string().url().optional(),
+  outputFormat: z.enum(["mp3", "aac"]).optional().default("mp3"),
+  bitrate: z.coerce.number().min(64).max(320).optional().default(128),
+});
+
 // Create task route
 const createTaskRoute = createRoute({
   method: "post",
@@ -165,6 +172,46 @@ const retryTaskRoute = createRoute({
     },
     400: {
       description: "Task cannot be retried",
+    },
+  },
+});
+
+// Test encoding route
+const testEncodeRoute = createRoute({
+  method: "post",
+  path: "/tasks/test-encode",
+  tags: ["tasks"],
+  summary: "Test audio encoding",
+  description:
+    "Create a test encoding task with a predefined audio file to validate FFmpeg functionality (no authentication required)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: TestEncodeSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Test encoding task created successfully",
+      content: {
+        "application/json": {
+          schema: z.object({
+            task: TaskSchema,
+            testInfo: z.object({
+              audioUrl: z.string(),
+              outputFormat: z.string(),
+              bitrate: z.number(),
+              estimatedSize: z.string(),
+            }),
+          }),
+        },
+      },
+    },
+    400: {
+      description: "Invalid request",
     },
   },
 });

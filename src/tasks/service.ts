@@ -1,7 +1,7 @@
 import { TaskRepository } from "./repository.js";
 import { EpisodeRepository } from "../episodes/repository.js";
 import { EventPublisher } from "../events/publisher.js";
-import type { Task, NewTask } from "../database/schema.js";
+import type { Task } from "../database/schema.js";
 import { v4 as uuidv4 } from "uuid";
 
 export type TaskType = "transcribe" | "encode" | "publish" | "notification";
@@ -12,6 +12,19 @@ export interface TaskPayload {
 
 export interface TaskResult {
   [key: string]: any;
+}
+
+// Encoding service response interface
+interface EncodingServiceResponse {
+  success: boolean;
+  encodedData?: string;
+  error?: string;
+  metadata?: {
+    format: string;
+    bitrate: number;
+    duration?: number;
+    size: number;
+  };
 }
 
 export class TaskService {
@@ -89,6 +102,32 @@ export class TaskService {
     }
 
     return retriedTask;
+  }
+
+  // Test encoding method that performs encoding directly without creating a task
+  async testEncode(payload: TaskPayload): Promise<TaskResult> {
+    if (!this.bucket) {
+      throw new Error("R2 bucket binding is required for encoding");
+    }
+
+    const startTime = Date.now();
+    console.log("Starting test encoding:", payload);
+
+    try {
+      // Call the private handleEncode method directly
+      const result = await this.handleEncode(payload);
+
+      // Add processing time to the result
+      const processingTime = Date.now() - startTime;
+      return {
+        ...result,
+        processingTime: `${(processingTime / 1000).toFixed(2)}s`,
+        testMode: true,
+      };
+    } catch (error) {
+      console.error("Test encoding failed:", error);
+      throw error;
+    }
   }
 
   private async processTask(task: Task): Promise<void> {
@@ -226,19 +265,121 @@ export class TaskService {
   }
 
   private async handleEncode(payload: TaskPayload): Promise<TaskResult> {
-    // Stub for audio encoding
-    // In a real implementation, this would encode audio files
-    console.log("Processing encode task:", payload);
+    if (!this.bucket) {
+      throw new Error("R2 bucket binding is required for encoding");
+    }
 
-    // Simulate processing time
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    const {
+      episodeId,
+      audioUrl,
+      outputFormat = "mp3",
+      bitrate = 128,
+    } = payload;
+    if (!episodeId || !audioUrl) {
+      throw new Error("Episode ID and audio URL are required for encoding");
+    }
 
-    return {
-      encoded_url: "https://example.com/encoded-audio.mp3",
-      format: "mp3",
-      bitrate: 128,
-      size: 5242880,
-    };
+    console.log("Processing encode task:", {
+      episodeId,
+      audioUrl,
+      outputFormat,
+      bitrate,
+    });
+
+    try {
+      // Call the external encoding service
+      const encodingServiceUrl =
+        process.env.ENCODING_SERVICE_URL ||
+        "https://encoding-service.sesamy-dev.workers.dev";
+
+      console.log("Calling encoding service:", encodingServiceUrl);
+      const response = await fetch(`${encodingServiceUrl}/encode`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ audioUrl, outputFormat, bitrate }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Encoding service failed: ${response.statusText}`);
+      }
+
+      const encodingResult = (await response.json()) as EncodingServiceResponse;
+
+      if (!encodingResult.success) {
+        throw new Error(`Encoding failed: ${encodingResult.error}`);
+      }
+
+      if (!encodingResult.encodedData) {
+        throw new Error("No encoded data received from encoding service");
+      }
+
+      console.log("Encoding completed, uploading to R2...");
+
+      // Upload encoded data to R2
+      const encodedBuffer = Buffer.from(encodingResult.encodedData, "base64");
+      const encodedId = uuidv4();
+      const encodedKey = `episodes/${episodeId}/encoded/${encodedId}.${outputFormat}`;
+
+      await this.bucket.put(encodedKey, encodedBuffer, {
+        httpMetadata: {
+          contentType: outputFormat === "mp3" ? "audio/mpeg" : "audio/aac",
+        },
+        customMetadata: {
+          episodeId,
+          format: outputFormat,
+          bitrate: bitrate.toString(),
+          encodedAt: new Date().toISOString(),
+          originalSize: encodingResult.metadata?.size?.toString() || "0",
+          duration: encodingResult.metadata?.duration?.toString() || "0",
+        },
+      });
+
+      // Construct the encoded audio URL
+      const encodedUrl = `${
+        process.env.R2_ENDPOINT || "https://podcast-media.sesamy.dev"
+      }/${encodedKey}`;
+
+      // Update the episode with the encoded audio URL
+      await this.episodeRepository.updateByIdOnly(episodeId, {
+        audioUrl: encodedUrl, // Update main audio URL to encoded version
+      });
+
+      // Publish completion event
+      await this.eventPublisher.publish(
+        "episode.encoding_completed",
+        {
+          episodeId,
+          encodedUrl,
+          format: outputFormat,
+          bitrate,
+          size: encodedBuffer.length,
+          duration: encodingResult.metadata?.duration || 0,
+        },
+        episodeId
+      );
+
+      console.log("Encoding completed:", {
+        episodeId,
+        encodedUrl,
+        format: outputFormat,
+        bitrate,
+        size: encodedBuffer.length,
+        duration: encodingResult.metadata?.duration || 0,
+      });
+
+      return {
+        encodedUrl,
+        encodedKey,
+        format: outputFormat,
+        bitrate,
+        size: encodedBuffer.length,
+        duration: encodingResult.metadata?.duration || 0,
+        completedAt: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error("Encoding failed:", error);
+      throw error;
+    }
   }
 
   private async handlePublish(payload: TaskPayload): Promise<TaskResult> {

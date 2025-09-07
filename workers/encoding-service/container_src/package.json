@@ -1,0 +1,12 @@
+{
+  "name": "encoding-service-container",
+  "version": "1.0.0",
+  "description": "FFmpeg-based audio encoding service for Cloudflare Containers",
+  "main": "index.js",
+  "dependencies": {
+    "uuid": "^9.0.1"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}
