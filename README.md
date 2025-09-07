@@ -17,6 +17,115 @@ Typical workflow:
 
 This system is used for encoding uploaded images and audio files, as well as other background operations.
 
+# Audio Encoding with FFmpeg Container
+
+The service includes a **containerized FFmpeg encoding service** that runs as a Cloudflare Container alongside the main worker. This provides powerful audio processing capabilities without the limitations of WebAssembly in the Workers environment.
+
+## Container Architecture
+
+```
+Main Worker → Encoding Container (FFmpeg) → Processed Audio
+```
+
+The encoding container:
+- **Runs native FFmpeg** with full codec support
+- **Supports multiple audio formats**: MP3, AAC, WAV, OGG, FLAC
+- **Configurable quality settings**: Bitrate, sample rate, channels
+- **Auto-scaling**: Containers spin up/down based on demand
+- **Isolated processing**: Each encoding session runs in its own container instance
+
+## Encoding Features
+
+- **Format Conversion**: Convert between audio formats (MP3, AAC, etc.)
+- **Quality Control**: Configurable bitrate (64-320 kbps)
+- **Optimization**: Automatic bitrate selection based on content
+- **Batch Processing**: Handle multiple files simultaneously
+- **Progress Tracking**: Monitor encoding status via task system
+
+## Usage Examples
+
+### Test Encoding (No Authentication Required)
+
+```bash
+# Test with default settings
+curl -X POST https://your-service.workers.dev/tasks/test-encode \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Test with custom settings
+curl -X POST https://your-service.workers.dev/tasks/test-encode \
+  -H "Content-Type: application/json" \
+  -d '{
+    "outputFormat": "mp3",
+    "bitrate": 192
+  }'
+```
+
+### Direct Container Access (Requires Authentication)
+
+```bash
+# Health check
+curl https://your-service.workers.dev/encoding
+
+# Encode audio URL
+curl -X POST https://your-service.workers.dev/encoding/encode \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "audioUrl": "https://example.com/audio.wav",
+    "outputFormat": "mp3",
+    "bitrate": 128
+  }'
+```
+
+### Create Encoding Task
+
+```bash
+curl -X POST https://your-service.workers.dev/tasks \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "encode",
+    "payload": {
+      "episodeId": "episode-123",
+      "audioUrl": "https://example.com/raw-audio.wav",
+      "outputFormat": "mp3",
+      "bitrate": 128
+    }
+  }'
+```
+
+## Container Configuration
+
+The encoding container is configured in `wrangler.toml`:
+
+```toml
+[[containers]]
+class_name = "EncodingContainer"
+image = "./Dockerfile.encoding"
+max_instances = 10
+
+[[durable_objects.bindings]]
+class_name = "EncodingContainer"
+name = "ENCODING_CONTAINER"
+```
+
+## Supported Audio Formats
+
+| Input Formats | Output Formats | Quality Options |
+|---------------|----------------|-----------------|
+| MP3, WAV, AAC | MP3, AAC       | 64-320 kbps     |
+| OGG, FLAC     | Optimized      | Auto bitrate    |
+| Any FFmpeg    | Podcast ready  | 44.1kHz stereo  |
+
+## Performance & Scaling
+
+- **Container Lifecycle**: 10-minute idle timeout
+- **Auto Scaling**: Up to 10 concurrent instances
+- **Processing Speed**: ~2-5x real-time encoding
+- **Memory Efficient**: Containers sleep when inactive
+- **Edge Deployment**: Runs close to users globally
+
 A **Service Standard v1** compliant podcast service built with **Hono**, **Zod OpenAPI**, **SQLite**, and **Drizzle ORM**, optimized for **Cloudflare Workers** edge deployment.
 
 ## Features
@@ -185,6 +294,14 @@ Authorization: Bearer <token>
 - `POST /tasks` — Create a new background processing task
 - `GET /tasks` — List tasks (supports filtering by status, limit, offset)
 - `GET /tasks/{task_id}` — Get details of a specific task by ID
+- `POST /tasks/test-encode` — Test encoding functionality (no auth required)
+
+### Encoding Container
+
+- `GET /encoding` — Health check for encoding service
+- `POST /encoding/test` — Test encoding with sample audio
+- `POST /encoding/encode` — Encode provided audio URL
+- `POST /encoding/batch` — Batch encode multiple files
 
 ### Publishing
 
@@ -263,10 +380,15 @@ src/
 ├── shows/             # Shows module (routes, service, repository, schemas)
 ├── episodes/          # Episodes module
 ├── audio/             # Audio upload module
+├── encoding/          # FFmpeg encoding container (routes, container class)
+├── tasks/             # Background task processing
 ├── scripts/           # Utility scripts
 ├── app.ts             # Hono app setup
-├── main.ts            # Entry point
+├── main.ts            # Entry point (Node.js)
+├── worker.ts          # Entry point (Cloudflare Workers)
 └── telemetry.ts       # OpenTelemetry setup
+container_src/         # Container source files for FFmpeg service
+Dockerfile.encoding    # Docker configuration for encoding container
 ```
 
 ## Example Usage
@@ -310,6 +432,38 @@ curl -X POST http://localhost:3000/shows/{show_id}/episodes/{episode_id}/publish
   -H "Authorization: Bearer <token>"
 ```
 
+### Test Audio Encoding
+
+```bash
+# Test encoding with default settings (no auth required)
+curl -X POST http://localhost:3000/tasks/test-encode \
+  -H "Content-Type: application/json" \
+  -d '{}'
+
+# Test encoding with custom settings
+curl -X POST http://localhost:3000/tasks/test-encode \
+  -H "Content-Type: application/json" \
+  -d '{
+    "outputFormat": "mp3",
+    "bitrate": 192
+  }'
+```
+
+### Create Encoding Task
+
+```bash
+curl -X POST http://localhost:3000/tasks \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "type": "encode",
+    "payload": {
+      "episodeId": "episode-123",
+      "audioUrl": "https://example.com/raw-audio.wav"
+    }
+  }'
+```
+
 ## Service Standard v1 Compliance
 
 This service implements all Service Standard v1 requirements:
@@ -334,3 +488,5 @@ This service implements all Service Standard v1 requirements:
 - **[OpenTelemetry](https://opentelemetry.io/)** - Observability
 - **[Winston](https://github.com/winstonjs/winston)** - Logging
 - **[CloudEvents](https://cloudevents.io/)** - Event specification
+- **[Cloudflare Containers](https://developers.cloudflare.com/containers/)** - Containerized FFmpeg encoding
+- **[FFmpeg](https://ffmpeg.org/)** - Audio/video processing
