@@ -62,6 +62,34 @@ const TestEncodeSchema = z.object({
   bitrate: z.coerce.number().min(64).max(320).optional().default(128),
 });
 
+// Test audio preprocessing request schema
+const TestAudioPreprocessSchema = z.object({
+  audioUrl: z.string().url().optional(),
+  episodeId: z.string().optional(),
+});
+
+// Test transcription request schema
+const TestTranscribeSchema = z.object({
+  audioUrl: z.string().url().optional(),
+  episodeId: z.string().optional(),
+  chunked: z.boolean().optional().default(false),
+  chunks: z
+    .array(
+      z.object({
+        index: z.number(),
+        url: z.string().url(),
+        key: z.string(),
+        startTime: z.number(),
+        endTime: z.number(),
+        duration: z.number(),
+        size: z.number(),
+        metadata: z.any().optional(),
+      })
+    )
+    .optional(),
+  overlapDuration: z.number().min(0).max(10).optional().default(2),
+});
+
 // Create task route
 const createTaskRoute = createRoute({
   method: "post",
@@ -225,6 +253,113 @@ const testEncodeRoute = createRoute({
   },
 });
 
+// Test audio preprocessing route
+const testAudioPreprocessRoute = createRoute({
+  method: "post",
+  path: "/tasks/test-audio-preprocess",
+  tags: ["tasks"],
+  summary: "Test audio preprocessing with chunking",
+  description:
+    "Create a test audio preprocessing task that splits audio into chunks for transcription (no authentication required)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: TestAudioPreprocessSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Test audio preprocessing completed successfully",
+      content: {
+        "application/json": {
+          schema: z.object({
+            chunks: z.array(
+              z.object({
+                index: z.number(),
+                url: z.string(),
+                key: z.string(),
+                startTime: z.number(),
+                endTime: z.number(),
+                duration: z.number(),
+                size: z.number(),
+              })
+            ),
+            totalChunks: z.number(),
+            totalDuration: z.number(),
+            processingMode: z.string(),
+            testMode: z.boolean(),
+            processingTime: z.string(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: "Invalid request",
+    },
+  },
+});
+
+// Test transcription route
+const testTranscribeRoute = createRoute({
+  method: "post",
+  path: "/tasks/test-transcribe",
+  tags: ["tasks"],
+  summary: "Test audio transcription",
+  description:
+    "Create a test transcription task for single files or chunked audio (no authentication required)",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: TestTranscribeSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      description: "Test transcription completed successfully",
+      content: {
+        "application/json": {
+          schema: z.object({
+            transcriptUrl: z.string(),
+            transcriptKey: z.string(),
+            textLength: z.number(),
+            completedAt: z.string(),
+            processingMode: z.string(),
+            testMode: z.boolean().optional(),
+            chunkDetails: z
+              .object({
+                totalChunks: z.number(),
+                overlapDuration: z.number(),
+                originalTextLength: z.number(),
+                compressionRatio: z.string(),
+              })
+              .optional(),
+            chunks: z
+              .array(
+                z.object({
+                  index: z.number(),
+                  startTime: z.number(),
+                  endTime: z.number(),
+                  wordCount: z.number(),
+                  textLength: z.number(),
+                })
+              )
+              .optional(),
+          }),
+        },
+      },
+    },
+    400: {
+      description: "Invalid request",
+    },
+  },
+});
+
 export const createTaskRoutes = (
   database?: D1Database,
   bucket?: R2Bucket,
@@ -306,6 +441,72 @@ export const createTaskRoutes = (
       throw new HTTPException(400, {
         message:
           error instanceof Error ? error.message : "Test encoding failed",
+      });
+    }
+  });
+
+  // Test audio preprocessing route handler
+  testApp.openapi(testAudioPreprocessRoute, async (c) => {
+    const body = c.req.valid("json");
+
+    try {
+      // Use default test audio URL if none provided
+      const audioUrl =
+        body.audioUrl ||
+        "https://www.soundjay.com/misc/sounds/fail-buzzer-02.mp3";
+      const payload = {
+        audioUrl,
+        episodeId: body.episodeId || `test-preprocess-${Date.now()}`,
+      };
+
+      const result = await taskService.testAudioPreprocess(payload);
+
+      return c.json(result, 201);
+    } catch (error) {
+      console.error("Test audio preprocessing failed:", error);
+      throw new HTTPException(400, {
+        message:
+          error instanceof Error
+            ? error.message
+            : "Test audio preprocessing failed",
+      });
+    }
+  });
+
+  // Test transcription route handler
+  testApp.openapi(testTranscribeRoute, async (c) => {
+    const body = c.req.valid("json");
+
+    try {
+      let payload;
+
+      if (body.chunked && body.chunks) {
+        // Chunked transcription
+        payload = {
+          episodeId: body.episodeId || `test-transcribe-chunked-${Date.now()}`,
+          chunked: true,
+          chunks: body.chunks,
+          overlapDuration: body.overlapDuration,
+        };
+      } else {
+        // Single file transcription
+        const audioUrl =
+          body.audioUrl ||
+          "https://www.soundjay.com/misc/sounds/fail-buzzer-02.mp3";
+        payload = {
+          audioUrl,
+          episodeId: body.episodeId || `test-transcribe-${Date.now()}`,
+        };
+      }
+
+      const result = await taskService.testTranscribe(payload);
+
+      return c.json(result, 201);
+    } catch (error) {
+      console.error("Test transcription failed:", error);
+      throw new HTTPException(400, {
+        message:
+          error instanceof Error ? error.message : "Test transcription failed",
       });
     }
   });

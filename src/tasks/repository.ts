@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/d1";
-import { eq, and, desc, asc } from "drizzle-orm";
+import { eq, and, desc, asc, sql, or } from "drizzle-orm";
 import { tasks, type Task, type NewTask } from "../database/schema.js";
 import { getDatabase } from "../database/client.js";
 
@@ -81,6 +81,15 @@ export class TaskRepository {
       .limit(limit);
   }
 
+  async findPendingAndRetryTasks(limit = 5): Promise<Task[]> {
+    return await this.db
+      .select()
+      .from(tasks)
+      .where(or(eq(tasks.status, "pending"), eq(tasks.status, "retry")))
+      .orderBy(tasks.createdAt)
+      .limit(limit);
+  }
+
   async updateStatus(
     id: number,
     status: string,
@@ -139,6 +148,17 @@ export class TaskRepository {
   async markAsFailed(id: number, error: string): Promise<Task | null> {
     return await this.updateStatus(id, "failed", {
       error,
+    });
+  }
+
+  async markAsRetry(
+    id: number,
+    error: string,
+    attempts: number
+  ): Promise<Task | null> {
+    return await this.updateStatus(id, "retry", {
+      error,
+      attempts,
     });
   }
 

@@ -10,7 +10,6 @@ PORT = "8787"
 R2_ENDPOINT = "https://podcast-media.sesamy.dev"
 
 # Secrets to be set with: wrangler secret put <name>
-# - JWT_SECRET
 # - DATABASE_URL (for production Turso database)
 # - R2_ACCESS_KEY_ID (for R2 pre-signed URLs)
 # - R2_SECRET_ACCESS_KEY (for R2 pre-signed URLs)
@@ -47,6 +46,12 @@ class_name = "EncodingContainer"
 image = "./Dockerfile.encoding"
 max_instances = 10
 instance_type = "standard"  # Use the largest available instance type (standard > basic > dev)
+
+# Workflow configuration
+[[workflows]]
+name = "audio-processing-workflow"
+binding = "AUDIO_PROCESSING_WORKFLOW"
+class_name = "AudioProcessingWorkflow"
 
 # Durable Objects bindings
 [[durable_objects.bindings]]

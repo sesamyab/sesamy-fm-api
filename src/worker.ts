@@ -8,6 +8,7 @@
 import { createApp } from "./app";
 import { TaskProcessor } from "./tasks/processor";
 import { EncodingContainer } from "./encoding/container";
+import { AudioProcessingWorkflow } from "./workflows/audio-processing-workflow";
 
 // Interface for Cloudflare Worker environment
 interface CloudflareEnv {
@@ -21,6 +22,7 @@ interface CloudflareEnv {
   R2_ENDPOINT?: string; // Full R2 endpoint URL with account ID
   TASK_QUEUE?: Queue;
   ENCODING_CONTAINER: DurableObjectNamespace;
+  AUDIO_PROCESSING_WORKFLOW?: Workflow;
 }
 
 export default {
@@ -38,7 +40,8 @@ export default {
       env.R2_ENDPOINT,
       env.AI,
       env.TASK_QUEUE,
-      env.ENCODING_CONTAINER
+      env.ENCODING_CONTAINER,
+      env.AUDIO_PROCESSING_WORKFLOW
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;
@@ -100,5 +103,5 @@ export default {
   },
 };
 
-// Export the EncodingContainer for Cloudflare Workers
-export { EncodingContainer };
+// Export the EncodingContainer and AudioProcessingWorkflow for Cloudflare Workers
+export { EncodingContainer, AudioProcessingWorkflow };

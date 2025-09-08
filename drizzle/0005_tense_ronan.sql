@@ -1,0 +1,1 @@
+ALTER TABLE `episodes` ADD `encoded_audio_urls` text;

@@ -23,6 +23,7 @@ export const episodes = sqliteTable("episodes", {
   imageUrl: text("image_url"),
   audioUrl: text("audio_url"),
   transcriptUrl: text("transcript_url"),
+  encodedAudioUrls: text("encoded_audio_urls"), // JSON string containing encoded audio URLs
   published: integer("published", { mode: "boolean" }).default(false),
   publishedAt: text("published_at"),
   createdAt: text("created_at").notNull(),
@@ -60,7 +61,7 @@ export const imageUploads = sqliteTable("image_uploads", {
 export const tasks = sqliteTable("tasks", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   type: text("type").notNull(), // "transcribe", "encode", "publish", "notification"
-  status: text("status").notNull().default("pending"), // "pending", "processing", "done", "failed"
+  status: text("status").notNull().default("pending"), // "pending", "processing", "done", "failed", "retry"
   payload: text("payload"), // JSON string with input data
   result: text("result"), // JSON string with output data
   error: text("error"), // Error message if failed

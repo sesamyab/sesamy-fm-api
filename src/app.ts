@@ -15,6 +15,7 @@ import { registerFeedRoutes } from "./feed/routes";
 import { createTaskRoutes } from "./tasks/routes";
 import { createEncodingRoutes } from "./encoding/routes";
 import { createTranscriptionRoutes } from "./transcription/routes";
+import { createWorkflowRoutes } from "./workflows/routes";
 import { EncodingContainer } from "./encoding/container";
 
 // Services
@@ -49,7 +50,8 @@ export function createApp(
   r2Endpoint?: string,
   ai?: Ai,
   queue?: Queue,
-  encodingContainer?: DurableObjectNamespace
+  encodingContainer?: DurableObjectNamespace,
+  audioProcessingWorkflow?: Workflow
 ) {
   const app = new OpenAPIHono();
 
@@ -83,7 +85,7 @@ export function createApp(
     r2AccessKeyId,
     r2SecretAccessKey,
     r2Endpoint,
-    taskService
+    audioProcessingWorkflow
   );
 
   const imageService =
@@ -176,6 +178,7 @@ export function createApp(
   });
   app.use("/tasks/*", authMiddleware);
   app.use("/encoding/*", authMiddleware);
+  app.use("/workflows/*", authMiddleware);
 
   // Apply auth to transcription routes except /transcription/test
   app.use("/transcription/*", (c, next) => {
@@ -203,6 +206,25 @@ export function createApp(
       r2Endpoint
     )
   );
+  app.route(
+    "/",
+    createEncodingRoutes(encodingContainer, database, bucket, ai, queue)
+  );
+  app.route(
+    "/",
+    createTranscriptionRoutes(
+      database,
+      bucket,
+      ai,
+      queue,
+      encodingContainer,
+      r2AccessKeyId,
+      r2SecretAccessKey,
+      r2Endpoint
+    )
+  );
+
+  app.route("/", createWorkflowRoutes());
 
   return app;
 }

@@ -18,6 +18,7 @@ export const UpdateEpisodeSchema = z.object({
   imageUrl: z.nullable(z.string().url()).optional(),
   audioUrl: z.nullable(z.string().url()).optional(),
   transcriptUrl: z.nullable(z.string().url()).optional(),
+  encodedAudioUrls: z.nullable(z.string()).optional(),
 });
 
 // Response schemas
@@ -29,6 +30,7 @@ export const EpisodeSchema = z.object({
   imageUrl: z.string().nullable(),
   audioUrl: z.string().nullable(),
   transcriptUrl: z.string().nullable(),
+  encodedAudioUrls: z.string().nullable(),
   published: z.boolean().nullable(),
   publishedAt: z.string().datetime().nullable(),
   createdAt: z.string().datetime(),

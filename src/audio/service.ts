@@ -168,7 +168,7 @@ export class AudioService {
   private audioRepo: AudioRepository;
   private eventPublisher: EventPublisher;
   private episodeRepo: EpisodeRepository;
-  private taskService?: TaskService;
+  private audioProcessingWorkflow?: Workflow;
   private bucket: R2Bucket;
   private presignedUrlGenerator: R2PreSignedUrlGenerator | null = null;
 
@@ -179,12 +179,12 @@ export class AudioService {
     r2AccessKeyId?: string,
     r2SecretAccessKey?: string,
     r2Endpoint?: string,
-    taskService?: TaskService
+    audioProcessingWorkflow?: Workflow
   ) {
     this.audioRepo = new AudioRepository(database);
     this.episodeRepo = new EpisodeRepository(database);
     this.eventPublisher = eventPublisher || new EventPublisher();
-    this.taskService = taskService;
+    this.audioProcessingWorkflow = audioProcessingWorkflow;
     this.bucket = bucket as R2Bucket;
 
     // Initialize pre-signed URL generator if credentials are available
@@ -288,68 +288,72 @@ export class AudioService {
       audioUpload.id
     );
 
-    // Enqueue tasks for uploaded audio
-    if (this.taskService) {
-      console.log(
-        `Creating tasks for uploaded audio: episodeId=${episodeId}, audioId=${audioId}`
-      );
-
-      // Create encoding task
-      await this.taskService.createTask("encode", {
-        audioId,
-        episodeId,
-        showId,
-        audioUrl: signedUrl, // Use signed URL for encoding service access
-      });
-      console.log(`Created encode task for episode ${episodeId}`);
-
-      // Create audio preprocessing task (which will then create transcription task)
-      await this.taskService.createTask("audio_preprocess", {
-        episodeId,
-        showId,
-        audioUrl: signedUrl, // Use signed URL for preprocessing
-      });
-      console.log(`Created audio preprocessing task for episode ${episodeId}`);
-    } else if (typeof (globalThis as any).TASK_QUEUE !== "undefined") {
-      console.log(
-        `Using queue for tasks: episodeId=${episodeId}, audioId=${audioId}`
-      );
-
-      // Fallback to queue-based approach
-      await (globalThis as any).TASK_QUEUE.send({
-        type: "encode",
-        payload: {
-          audioId,
-          episodeId,
-          showId,
-          audioUrl: signedUrl, // Use signed URL for encoding service access
-        },
-      });
-
-      // Also enqueue audio preprocessing task for uploaded audio
-      await (globalThis as any).TASK_QUEUE.send({
-        type: "audio_preprocess",
-        payload: {
-          episodeId,
-          showId,
-          audioUrl: signedUrl, // Use signed URL for preprocessing
-        },
-      });
-      console.log(
-        `Sent encode and audio preprocessing tasks to queue for episode ${episodeId}`
-      );
-    } else {
-      console.warn(
-        `No task processing available - TaskService: ${!!this
-          .taskService}, Queue: ${typeof (globalThis as any).TASK_QUEUE}`
-      );
-    }
+    // Process uploaded audio with workflow or fallback to tasks
+    await this.processUploadedAudio(episodeId, showId, audioId, signedUrl);
 
     // Return upload info with signed URL for immediate use
     return {
       ...audioUpload,
       url: signedUrl,
     };
+  }
+
+  // Process uploaded audio with workflow-only approach
+  private async processUploadedAudio(
+    episodeId: string,
+    showId: string,
+    audioId: string,
+    signedUrl: string
+  ): Promise<void> {
+    if (!this.audioProcessingWorkflow) {
+      throw new Error(
+        "Audio processing workflow not available - workflow processing required"
+      );
+    }
+
+    console.log(
+      `Starting audio processing workflow for uploaded audio: episodeId=${episodeId}`
+    );
+
+    try {
+      // Start the audio processing workflow
+      const workflowInstance = await this.audioProcessingWorkflow.create({
+        params: {
+          episodeId,
+          audioUrl: signedUrl,
+          chunkDuration: 30,
+          overlapDuration: 2,
+          encodingFormats: ["mp3_128"], // Use MP3 format with auto-adjusted bitrate based on mono/stereo
+        },
+      });
+
+      console.log(
+        `Started audio processing workflow ${workflowInstance.id} for episode ${episodeId}`
+      );
+
+      // Publish workflow started event
+      await this.eventPublisher.publish(
+        "episode.audio_processing_workflow_started",
+        {
+          episodeId,
+          workflowId: workflowInstance.id,
+          audioUrl: signedUrl,
+          type: "workflow",
+        },
+        episodeId
+      );
+    } catch (error) {
+      console.error(
+        `Failed to start audio processing workflow for episode ${episodeId}:`,
+        error
+      );
+      // Re-throw the error since we're workflow-only now
+      throw new Error(
+        `Workflow startup failed: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
   }
 
   async getAudioMetadata(showId: string, episodeId: string) {
