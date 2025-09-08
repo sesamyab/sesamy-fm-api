@@ -28,6 +28,7 @@ Main Worker → Encoding Container (FFmpeg) → Processed Audio
 ```
 
 The encoding container:
+
 - **Runs native FFmpeg** with full codec support
 - **Supports multiple audio formats**: MP3, AAC, WAV, OGG, FLAC
 - **Configurable quality settings**: Bitrate, sample rate, channels
@@ -113,7 +114,7 @@ name = "ENCODING_CONTAINER"
 ## Supported Audio Formats
 
 | Input Formats | Output Formats | Quality Options |
-|---------------|----------------|-----------------|
+| ------------- | -------------- | --------------- |
 | MP3, WAV, AAC | MP3, AAC       | 64-320 kbps     |
 | OGG, FLAC     | Optimized      | Auto bitrate    |
 | Any FFmpeg    | Podcast ready  | 44.1kHz stereo  |

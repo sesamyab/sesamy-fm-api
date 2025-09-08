@@ -134,76 +134,11 @@ export function createApp(
   // RSS feeds don't require authentication (public access)
   registerFeedRoutes(app, showService, episodeRepository, audioService);
 
-  // Test encoding endpoint (no auth required)
-  app.post("/tasks/test-encode", async (c) => {
-    const body = await c.req.json().catch(() => ({}));
-
-    // Use provided URL or default test audio
-    const defaultTestAudio =
-      "https://podcast-media.sesamy.dev/audio/b0253f27-f247-46be-a9df-df7fbc1bc437/0a215bd9-65a5-4e71-9566-860ea84da493/2b6418e9-ea7c-42b1-ab63-0ac70d662e71/8f7cd1ff-dfcd-4184-bff1-bcf776c80b92.mp3";
-    const audioUrl = body.audioUrl || defaultTestAudio;
-    const outputFormat = body.outputFormat || "mp3";
-    const bitrate = body.bitrate || 128;
-
-    try {
-      // Call the encoding service (now deployed as Cloudflare Container)
-      const encodingServiceUrl =
-        process.env.ENCODING_SERVICE_URL ||
-        "https://encoding-service.sesamy-dev.workers.dev";
-
-      console.log(`Calling encoding service: ${encodingServiceUrl}/test`);
-
-      const response = await fetch(`${encodingServiceUrl}/test`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ outputFormat, bitrate }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Encoding service failed: ${response.statusText}`);
-      }
-
-      const result = (await response.json()) as EncodingServiceResponse;
-
-      if (!result.success) {
-        throw new Error(`Encoding failed: ${result.error}`);
-      }
-
-      return c.json(
-        {
-          success: true,
-          message: "Direct encoding completed successfully",
-          result: {
-            format: result.metadata?.format || outputFormat,
-            bitrate: result.metadata?.bitrate || bitrate,
-            size: result.metadata?.size || 0,
-            duration: result.metadata?.duration || 0,
-            sampleEncoded: true,
-          },
-          testInfo: {
-            ...result.testInfo,
-            encodingService: encodingServiceUrl,
-            estimatedSize: `${Math.round((bitrate * 60) / 8)} KB`,
-          },
-        },
-        200
-      );
-    } catch (error) {
-      console.error("Test encoding failed:", error);
-      return c.json(
-        {
-          success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
-          testInfo: {
-            audioUrl,
-            outputFormat,
-            bitrate,
-          },
-        },
-        500
-      );
-    }
-  });
+  // Encoding routes (test endpoint requires no auth)
+  app.route(
+    "/",
+    createEncodingRoutes(encodingContainer, database, bucket, ai, queue)
+  );
 
   // All other routes require authentication
   app.use("/shows/*", (c, next) => {
@@ -215,12 +150,20 @@ export function createApp(
   });
   app.use("/tasks/*", authMiddleware);
 
+  // Apply auth to all encoding routes except /encoding/test
+  app.use("/encoding/*", (c, next) => {
+    // Skip auth for test endpoint
+    if (c.req.path === "/encoding/test") {
+      return next();
+    }
+    return authMiddleware(c, next);
+  });
+
   // Register API routes
   registerShowRoutes(app, showService, audioService, imageService);
   registerEpisodeRoutes(app, episodeService, audioService, imageService);
   registerAudioRoutes(app, audioService);
   app.route("/", createTaskRoutes(database, bucket, ai, queue));
-  app.route("/", createEncodingRoutes(encodingContainer));
 
   return app;
 }

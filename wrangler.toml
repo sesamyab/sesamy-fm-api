@@ -46,6 +46,7 @@ queue = "podcast-tasks"
 class_name = "EncodingContainer"
 image = "./Dockerfile.encoding"
 max_instances = 10
+instance_type = "standard"  # Use the largest available instance type (standard > basic > dev)
 
 # Durable Objects bindings
 [[durable_objects.bindings]]
