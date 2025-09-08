@@ -54,7 +54,16 @@ export default {
     ctx: ExecutionContext
   ): Promise<void> {
     // Process background tasks
-    const taskProcessor = new TaskProcessor(env.DB, env.BUCKET, env.AI);
+    const taskProcessor = new TaskProcessor(
+      env.DB,
+      env.BUCKET,
+      env.AI,
+      env.TASK_QUEUE,
+      env.ENCODING_CONTAINER,
+      env.R2_ACCESS_KEY_ID,
+      env.R2_SECRET_ACCESS_KEY,
+      env.R2_ENDPOINT
+    );
     await taskProcessor.handleScheduledTask(event);
   },
   async queue(
@@ -63,11 +72,27 @@ export default {
     ctx: ExecutionContext
   ) {
     // Process messages from TASK_QUEUE
-    const taskProcessor = new TaskProcessor(env.DB, env.BUCKET, env.AI);
+    const taskProcessor = new TaskProcessor(
+      env.DB,
+      env.BUCKET,
+      env.AI,
+      env.TASK_QUEUE,
+      env.ENCODING_CONTAINER,
+      env.R2_ACCESS_KEY_ID,
+      env.R2_SECRET_ACCESS_KEY,
+      env.R2_ENDPOINT
+    );
     for (const msg of batch.messages) {
       try {
-        // Each message should contain a task payload
-        await taskProcessor.processTasks(1); // You may want to pass the task info for more granular control
+        const { type, taskId, payload } = msg.body;
+
+        if (taskId) {
+          // Process specific task by ID for immediate processing
+          await taskProcessor.processSpecificTask(taskId);
+        } else {
+          // Fallback to batch processing
+          await taskProcessor.processTasks(1);
+        }
       } catch (err) {
         console.error("Error processing queue message:", err);
       }

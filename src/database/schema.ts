@@ -65,6 +65,8 @@ export const tasks = sqliteTable("tasks", {
   result: text("result"), // JSON string with output data
   error: text("error"), // Error message if failed
   attempts: integer("attempts").default(0),
+  startedAt: text("started_at"), // When task processing actually started
+  progress: integer("progress").default(0), // Progress percentage (0-100)
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

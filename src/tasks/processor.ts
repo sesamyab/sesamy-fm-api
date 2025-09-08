@@ -4,8 +4,26 @@ export class TaskProcessor {
   private taskService: TaskService;
   private isProcessing = false;
 
-  constructor(database?: D1Database, bucket?: R2Bucket, ai?: Ai) {
-    this.taskService = new TaskService(database, bucket, ai);
+  constructor(
+    database?: D1Database,
+    bucket?: R2Bucket,
+    ai?: Ai,
+    queue?: Queue,
+    encodingContainer?: DurableObjectNamespace,
+    r2AccessKeyId?: string,
+    r2SecretAccessKey?: string,
+    r2Endpoint?: string
+  ) {
+    this.taskService = new TaskService(
+      database,
+      bucket,
+      ai,
+      queue,
+      encodingContainer,
+      r2AccessKeyId,
+      r2SecretAccessKey,
+      r2Endpoint
+    );
   }
 
   async processTasks(batchSize = 5): Promise<{
@@ -57,6 +75,35 @@ export class TaskProcessor {
       console.log("Scheduled task processing result:", result);
     } catch (error) {
       console.error("Scheduled task processing failed:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Process a specific task by ID for immediate processing
+   */
+  async processSpecificTask(taskId: number): Promise<void> {
+    console.log(`Processing specific task: ${taskId}`);
+
+    try {
+      const task = await this.taskService.getTask(taskId);
+      if (!task) {
+        console.warn(`Task ${taskId} not found`);
+        return;
+      }
+
+      if (task.status !== "pending") {
+        console.warn(
+          `Task ${taskId} is not in pending status (current: ${task.status})`
+        );
+        return;
+      }
+
+      // Process the specific task directly
+      await this.taskService.processTask(task);
+      console.log(`Successfully processed task ${taskId}`);
+    } catch (error) {
+      console.error(`Error processing specific task ${taskId}:`, error);
       throw error;
     }
   }

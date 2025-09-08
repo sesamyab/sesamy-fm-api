@@ -1,5 +1,5 @@
 import { drizzle } from "drizzle-orm/d1";
-import { eq, and } from "drizzle-orm";
+import { eq, and, desc, asc } from "drizzle-orm";
 import { tasks, type Task, type NewTask } from "../database/schema.js";
 import { getDatabase } from "../database/client.js";
 
@@ -31,17 +31,45 @@ export class TaskRepository {
     return result[0] || null;
   }
 
-  async findByStatus(status?: string, limit = 10, offset = 0): Promise<Task[]> {
+  async findByStatus(
+    status?: string,
+    limit = 10,
+    offset = 0,
+    sortBy = "created_at",
+    sortOrder = "desc"
+  ): Promise<Task[]> {
+    // Determine the sort column
+    const sortColumn =
+      sortBy === "created_at"
+        ? tasks.createdAt
+        : sortBy === "updated_at"
+        ? tasks.updatedAt
+        : sortBy === "type"
+        ? tasks.type
+        : sortBy === "status"
+        ? tasks.status
+        : tasks.createdAt; // default fallback
+
+    // Determine sort direction
+    const orderByColumn =
+      sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
+
     if (status) {
       return await this.db
         .select()
         .from(tasks)
         .where(eq(tasks.status, status))
+        .orderBy(orderByColumn)
         .limit(limit)
         .offset(offset);
     }
 
-    return await this.db.select().from(tasks).limit(limit).offset(offset);
+    return await this.db
+      .select()
+      .from(tasks)
+      .orderBy(orderByColumn)
+      .limit(limit)
+      .offset(offset);
   }
 
   async findPendingTasks(limit = 5): Promise<Task[]> {
@@ -60,6 +88,8 @@ export class TaskRepository {
       result?: string;
       error?: string;
       attempts?: number;
+      startedAt?: string;
+      progress?: number;
     } = {}
   ): Promise<Task | null> {
     const now = new Date().toISOString();
@@ -78,12 +108,26 @@ export class TaskRepository {
   }
 
   async incrementAttempts(id: number): Promise<Task | null> {
+    console.log(`Incrementing attempts for task ${id}`);
     const task = await this.findById(id);
-    if (!task) return null;
+    if (!task) {
+      console.log(`Task ${id} not found`);
+      return null;
+    }
 
-    return await this.updateStatus(id, "processing", {
+    console.log(
+      `Task ${id} current status: ${task.status}, attempts: ${
+        task.attempts || 0
+      }`
+    );
+    const updatedTask = await this.updateStatus(id, "processing", {
       attempts: (task.attempts || 0) + 1,
     });
+    console.log(
+      `Task ${id} updated status: ${updatedTask?.status}, attempts: ${updatedTask?.attempts}`
+    );
+
+    return updatedTask;
   }
 
   async markAsDone(id: number, result?: any): Promise<Task | null> {
@@ -99,9 +143,53 @@ export class TaskRepository {
   }
 
   async resetForRetry(id: number): Promise<Task | null> {
-    return await this.updateStatus(id, "pending", {
-      error: undefined,
-      result: undefined,
-    });
+    const now = new Date().toISOString();
+
+    const result = await this.db
+      .update(tasks)
+      .set({
+        status: "pending",
+        error: null,
+        result: null,
+        progress: 0,
+        startedAt: null,
+        updatedAt: now,
+      })
+      .where(eq(tasks.id, id))
+      .returning();
+
+    return result[0] || null;
+  }
+
+  async updateProgress(id: number, progress: number): Promise<Task | null> {
+    const now = new Date().toISOString();
+
+    const result = await this.db
+      .update(tasks)
+      .set({
+        progress,
+        updatedAt: now,
+      })
+      .where(eq(tasks.id, id))
+      .returning();
+
+    return result[0] || null;
+  }
+
+  async markAsStarted(id: number): Promise<Task | null> {
+    const now = new Date().toISOString();
+
+    const result = await this.db
+      .update(tasks)
+      .set({
+        status: "processing",
+        startedAt: now,
+        progress: 0,
+        updatedAt: now,
+      })
+      .where(eq(tasks.id, id))
+      .returning();
+
+    return result[0] || null;
   }
 }

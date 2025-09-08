@@ -6,8 +6,13 @@ const { v4: uuidv4 } = require("uuid");
 
 const PORT = process.env.PORT || 8080;
 
-// Helper function to run FFmpeg commands
-function runFFmpeg(inputUrl, outputFormat = "mp3", bitrate = 128) {
+// Helper function to run FFmpeg commands with progress streaming
+function runFFmpegWithProgress(
+  inputUrl,
+  outputFormat = "mp3",
+  bitrate = 128,
+  progressCallback
+) {
   return new Promise((resolve, reject) => {
     const outputFile = `/tmp/output_${uuidv4()}.${outputFormat}`;
 
@@ -20,6 +25,8 @@ function runFFmpeg(inputUrl, outputFormat = "mp3", bitrate = 128) {
       `${bitrate}k`,
       "-f",
       outputFormat,
+      "-progress",
+      "pipe:1", // Enable progress output to stdout
       outputFile,
     ];
 
@@ -28,9 +35,85 @@ function runFFmpeg(inputUrl, outputFormat = "mp3", bitrate = 128) {
     const ffmpeg = spawn("ffmpeg", ffmpegArgs);
 
     let stderr = "";
+    let duration = null;
+
+    // Parse FFmpeg progress output
+    ffmpeg.stdout.on("data", (data) => {
+      const progressData = data.toString();
+
+      // Parse duration from the beginning
+      if (!duration && progressData.includes("Duration:")) {
+        const durationMatch = progressData.match(
+          /Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})/
+        );
+        if (durationMatch) {
+          const hours = parseInt(durationMatch[1]);
+          const minutes = parseInt(durationMatch[2]);
+          const seconds = parseFloat(durationMatch[3]);
+          duration = hours * 3600 + minutes * 60 + seconds;
+          console.log(`Detected duration: ${duration}s`);
+        }
+      }
+
+      // Parse current time and calculate progress
+      if (duration && progressData.includes("out_time_ms=")) {
+        const timeMatch = progressData.match(/out_time_ms=(\d+)/);
+        if (timeMatch) {
+          const currentTimeMs = parseInt(timeMatch[1]);
+          const currentTimeS = currentTimeMs / 1000000; // Convert microseconds to seconds
+          const progress = Math.min(
+            Math.round((currentTimeS / duration) * 100),
+            99
+          );
+
+          if (progressCallback && progress > 0) {
+            progressCallback(progress);
+          }
+        }
+      }
+    });
 
     ffmpeg.stderr.on("data", (data) => {
       stderr += data.toString();
+      const stderrStr = data.toString();
+
+      // Parse duration from stderr if not found in stdout
+      if (!duration && stderrStr.includes("Duration:")) {
+        const durationMatch = stderrStr.match(
+          /Duration: (\d{2}):(\d{2}):(\d{2}\.\d{2})/
+        );
+        if (durationMatch) {
+          const hours = parseInt(durationMatch[1]);
+          const minutes = parseInt(durationMatch[2]);
+          const seconds = parseFloat(durationMatch[3]);
+          duration = hours * 3600 + minutes * 60 + seconds;
+          console.log(`Detected duration from stderr: ${duration}s`);
+          if (progressCallback) {
+            progressCallback(5); // Initial progress
+          }
+        }
+      }
+
+      // Parse time progress from stderr
+      if (duration && stderrStr.includes("time=")) {
+        const timeMatch = stderrStr.match(
+          /time=(\d{2}):(\d{2}):(\d{2}\.\d{2})/
+        );
+        if (timeMatch) {
+          const hours = parseInt(timeMatch[1]);
+          const minutes = parseInt(timeMatch[2]);
+          const seconds = parseFloat(timeMatch[3]);
+          const currentTime = hours * 3600 + minutes * 60 + seconds;
+          const progress = Math.min(
+            Math.round((currentTime / duration) * 100),
+            99
+          );
+
+          if (progressCallback && progress > 0) {
+            progressCallback(progress);
+          }
+        }
+      }
     });
 
     ffmpeg.on("close", async (code) => {
@@ -44,6 +127,10 @@ function runFFmpeg(inputUrl, outputFormat = "mp3", bitrate = 128) {
           // Clean up the output file
           await fs.unlink(outputFile);
 
+          if (progressCallback) {
+            progressCallback(100); // Final progress
+          }
+
           resolve({
             success: true,
             encodedData: encodedData.toString("base64"), // Return as base64
@@ -51,6 +138,7 @@ function runFFmpeg(inputUrl, outputFormat = "mp3", bitrate = 128) {
               format: outputFormat,
               bitrate: bitrate,
               size: stats.size,
+              duration: duration,
               outputFile: outputFile,
             },
           });
@@ -66,6 +154,11 @@ function runFFmpeg(inputUrl, outputFormat = "mp3", bitrate = 128) {
       reject(new Error(`FFmpeg spawn error: ${error.message}`));
     });
   });
+}
+
+// Helper function to run FFmpeg commands (legacy, non-streaming)
+function runFFmpeg(inputUrl, outputFormat = "mp3", bitrate = 128) {
+  return runFFmpegWithProgress(inputUrl, outputFormat, bitrate, null);
 }
 
 // Create HTTP server
@@ -150,7 +243,7 @@ const server = http.createServer(async (req, res) => {
       return;
     }
 
-    // Encode endpoint
+    // Encode endpoint with streaming progress
     if (path === "/encode" && req.method === "POST") {
       let body = "";
       req.on("data", (chunk) => {
@@ -159,7 +252,12 @@ const server = http.createServer(async (req, res) => {
       req.on("end", async () => {
         try {
           const requestData = JSON.parse(body);
-          const { audioUrl, outputFormat = "mp3", bitrate = 128 } = requestData;
+          const {
+            audioUrl,
+            outputFormat = "mp3",
+            bitrate = 128,
+            streaming = false,
+          } = requestData;
 
           if (!audioUrl) {
             res.statusCode = 400;
@@ -174,19 +272,73 @@ const server = http.createServer(async (req, res) => {
           }
 
           console.log(
-            `Encoding: ${audioUrl} -> ${outputFormat} at ${bitrate}kbps`
+            `Encoding: ${audioUrl} -> ${outputFormat} at ${bitrate}kbps (streaming: ${streaming})`
           );
 
-          const result = await runFFmpeg(audioUrl, outputFormat, bitrate);
+          if (streaming) {
+            // Set headers for Server-Sent Events (SSE)
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "text/plain");
+            res.setHeader("Cache-Control", "no-cache");
+            res.setHeader("Connection", "keep-alive");
 
-          res.statusCode = 200;
-          res.setHeader("Content-Type", "application/json");
-          res.end(
-            JSON.stringify({
-              success: true,
-              ...result,
-            })
-          );
+            // Send initial progress
+            res.write(
+              `data: ${JSON.stringify({
+                type: "progress",
+                progress: 0,
+                message: "Starting encoding...",
+              })}\n\n`
+            );
+
+            try {
+              const result = await runFFmpegWithProgress(
+                audioUrl,
+                outputFormat,
+                bitrate,
+                (progress) => {
+                  // Send progress updates via SSE
+                  const progressData = {
+                    type: "progress",
+                    progress: progress,
+                    message: `Encoding... ${progress}%`,
+                  };
+                  res.write(`data: ${JSON.stringify(progressData)}\n\n`);
+                }
+              );
+
+              // Send final result
+              const finalData = {
+                type: "complete",
+                progress: 100,
+                success: true,
+                ...result,
+              };
+              res.write(`data: ${JSON.stringify(finalData)}\n\n`);
+              res.end();
+            } catch (error) {
+              console.error("Streaming encoding error:", error);
+              const errorData = {
+                type: "error",
+                success: false,
+                error: error.message,
+              };
+              res.write(`data: ${JSON.stringify(errorData)}\n\n`);
+              res.end();
+            }
+          } else {
+            // Non-streaming mode (legacy)
+            const result = await runFFmpeg(audioUrl, outputFormat, bitrate);
+
+            res.statusCode = 200;
+            res.setHeader("Content-Type", "application/json");
+            res.end(
+              JSON.stringify({
+                success: true,
+                ...result,
+              })
+            );
+          }
         } catch (error) {
           console.error("Encoding error:", error);
           res.statusCode = 500;

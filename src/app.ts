@@ -14,6 +14,7 @@ import { registerAudioRoutes } from "./audio/routes";
 import { registerFeedRoutes } from "./feed/routes";
 import { createTaskRoutes } from "./tasks/routes";
 import { createEncodingRoutes } from "./encoding/routes";
+import { createTranscriptionRoutes } from "./transcription/routes";
 import { EncodingContainer } from "./encoding/container";
 
 // Services
@@ -59,7 +60,16 @@ export function createApp(
   const showService = new ShowService(showRepository, eventPublisher);
 
   const episodeRepository = new EpisodeRepository(database);
-  const taskService = new TaskService(database, bucket, ai, queue);
+  const taskService = new TaskService(
+    database,
+    bucket,
+    ai,
+    queue,
+    encodingContainer,
+    r2AccessKeyId,
+    r2SecretAccessKey,
+    r2Endpoint
+  );
   const episodeService = new EpisodeService(
     episodeRepository,
     eventPublisher,
@@ -122,6 +132,7 @@ export function createApp(
       { name: "episodes", description: "Episode management" },
       { name: "audio", description: "Audio file management" },
       { name: "tasks", description: "Background task management" },
+      { name: "transcription", description: "Audio transcription services" },
     ],
   });
 
@@ -134,10 +145,25 @@ export function createApp(
   // RSS feeds don't require authentication (public access)
   registerFeedRoutes(app, showService, episodeRepository, audioService);
 
-  // Encoding routes (test endpoint requires no auth)
+  // Encoding routes
   app.route(
     "/",
     createEncodingRoutes(encodingContainer, database, bucket, ai, queue)
+  );
+
+  // Transcription routes
+  app.route(
+    "/",
+    createTranscriptionRoutes(
+      database,
+      bucket,
+      ai,
+      queue,
+      encodingContainer,
+      r2AccessKeyId,
+      r2SecretAccessKey,
+      r2Endpoint
+    )
   );
 
   // All other routes require authentication
@@ -149,11 +175,12 @@ export function createApp(
     return authMiddleware(c, next);
   });
   app.use("/tasks/*", authMiddleware);
+  app.use("/encoding/*", authMiddleware);
 
-  // Apply auth to all encoding routes except /encoding/test
-  app.use("/encoding/*", (c, next) => {
+  // Apply auth to transcription routes except /transcription/test
+  app.use("/transcription/*", (c, next) => {
     // Skip auth for test endpoint
-    if (c.req.path === "/encoding/test") {
+    if (c.req.path === "/transcription/test") {
       return next();
     }
     return authMiddleware(c, next);
@@ -163,7 +190,19 @@ export function createApp(
   registerShowRoutes(app, showService, audioService, imageService);
   registerEpisodeRoutes(app, episodeService, audioService, imageService);
   registerAudioRoutes(app, audioService);
-  app.route("/", createTaskRoutes(database, bucket, ai, queue));
+  app.route(
+    "/",
+    createTaskRoutes(
+      database,
+      bucket,
+      ai,
+      queue,
+      encodingContainer,
+      r2AccessKeyId,
+      r2SecretAccessKey,
+      r2Endpoint
+    )
+  );
 
   return app;
 }

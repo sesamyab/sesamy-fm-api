@@ -299,17 +299,17 @@ export class AudioService {
         audioId,
         episodeId,
         showId,
-        url,
+        audioUrl: signedUrl, // Use signed URL for encoding service access
       });
       console.log(`Created encode task for episode ${episodeId}`);
 
-      // Create transcription task
-      await this.taskService.createTask("transcribe", {
+      // Create audio preprocessing task (which will then create transcription task)
+      await this.taskService.createTask("audio_preprocess", {
         episodeId,
         showId,
-        audioUrl: signedUrl, // Use signed URL for transcription service access
+        audioUrl: signedUrl, // Use signed URL for preprocessing
       });
-      console.log(`Created transcribe task for episode ${episodeId}`);
+      console.log(`Created audio preprocessing task for episode ${episodeId}`);
     } else if (typeof (globalThis as any).TASK_QUEUE !== "undefined") {
       console.log(
         `Using queue for tasks: episodeId=${episodeId}, audioId=${audioId}`
@@ -322,21 +322,21 @@ export class AudioService {
           audioId,
           episodeId,
           showId,
-          url,
+          audioUrl: signedUrl, // Use signed URL for encoding service access
         },
       });
 
-      // Also enqueue transcription task for uploaded audio
+      // Also enqueue audio preprocessing task for uploaded audio
       await (globalThis as any).TASK_QUEUE.send({
-        type: "transcribe",
+        type: "audio_preprocess",
         payload: {
           episodeId,
           showId,
-          audioUrl: signedUrl, // Use signed URL for transcription service access
+          audioUrl: signedUrl, // Use signed URL for preprocessing
         },
       });
       console.log(
-        `Sent encode and transcribe tasks to queue for episode ${episodeId}`
+        `Sent encode and audio preprocessing tasks to queue for episode ${episodeId}`
       );
     } else {
       console.warn(

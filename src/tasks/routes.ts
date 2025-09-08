@@ -12,6 +12,7 @@ const TaskStatusSchema = z.enum(["pending", "processing", "done", "failed"]);
 const TaskTypeSchema = z.enum([
   "transcribe",
   "encode",
+  "audio_preprocess",
   "publish",
   "notification",
 ]);
@@ -25,6 +26,8 @@ const TaskSchema = z.object({
   result: z.any().optional().nullable(),
   error: z.string().optional().nullable(),
   attempts: z.number(),
+  started_at: z.string().optional().nullable(),
+  progress: z.number().optional().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
 });
@@ -40,6 +43,11 @@ const TaskQuerySchema = z.object({
   status: TaskStatusSchema.optional(),
   limit: z.coerce.number().min(1).max(100).optional().default(10),
   offset: z.coerce.number().min(0).optional().default(0),
+  sortBy: z
+    .enum(["created_at", "updated_at", "type", "status"])
+    .optional()
+    .default("created_at"),
+  sortOrder: z.enum(["asc", "desc"]).optional().default("desc"),
 });
 
 // Task ID parameter schema
@@ -95,7 +103,8 @@ const getTasksRoute = createRoute({
   path: "/tasks",
   tags: ["tasks"],
   summary: "List tasks",
-  description: "Get a list of tasks with optional status filtering",
+  description:
+    "Get a list of tasks with optional status filtering and sorting. Default sort is by created_at in descending order (newest first).",
   security: [{ Bearer: [] }],
   request: {
     query: TaskQuerySchema,
@@ -220,10 +229,23 @@ export const createTaskRoutes = (
   database?: D1Database,
   bucket?: R2Bucket,
   ai?: Ai,
-  queue?: Queue
+  queue?: Queue,
+  encodingContainer?: DurableObjectNamespace,
+  r2AccessKeyId?: string,
+  r2SecretAccessKey?: string,
+  r2Endpoint?: string
 ) => {
   const app = new OpenAPIHono();
-  const taskService = new TaskService(database, bucket, ai, queue);
+  const taskService = new TaskService(
+    database,
+    bucket,
+    ai,
+    queue,
+    encodingContainer,
+    r2AccessKeyId,
+    r2SecretAccessKey,
+    r2Endpoint
+  );
 
   // Helper function to serialize task data for API response
   const serializeTask = (task: any) => ({
@@ -234,6 +256,62 @@ export const createTaskRoutes = (
 
   // Apply authentication middleware - using colon notation to match user permissions
   app.use("*", requireScopes(["podcast:read", "podcast:write"]));
+
+  // Test encode route (no authentication required) - add before auth middleware
+  const testApp = new OpenAPIHono();
+  testApp.openapi(testEncodeRoute, async (c) => {
+    const body = c.req.valid("json");
+
+    try {
+      // Use default test audio URL if none provided
+      const audioUrl =
+        body.audioUrl ||
+        "https://www.soundjay.com/misc/sounds/fail-buzzer-02.mp3";
+      const payload = {
+        audioUrl,
+        outputFormat: body.outputFormat,
+        bitrate: body.bitrate,
+        episodeId: `test-encode-${Date.now()}`, // Generate test episode ID
+      };
+
+      const result = await taskService.testEncode(payload);
+
+      // Create a mock task object for response
+      const mockTask = {
+        id: Date.now(),
+        type: "encode" as const,
+        status: "done" as const,
+        payload,
+        result,
+        error: null,
+        attempts: 1,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      };
+
+      return c.json(
+        {
+          task: mockTask,
+          testInfo: {
+            audioUrl,
+            outputFormat: body.outputFormat,
+            bitrate: body.bitrate,
+            estimatedSize: "~1KB (mock)",
+          },
+        },
+        201
+      );
+    } catch (error) {
+      console.error("Test encoding failed:", error);
+      throw new HTTPException(400, {
+        message:
+          error instanceof Error ? error.message : "Test encoding failed",
+      });
+    }
+  });
+
+  // Mount test routes without authentication
+  app.route("/", testApp);
 
   // Create task
   app.openapi(createTaskRoute, async (c) => {
@@ -250,7 +328,9 @@ export const createTaskRoutes = (
     const tasks = await taskService.getTasks(
       query.status,
       query.limit,
-      query.offset
+      query.offset,
+      query.sortBy,
+      query.sortOrder
     );
 
     return c.json(tasks.map(serializeTask));
