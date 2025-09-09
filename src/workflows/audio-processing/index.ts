@@ -6,11 +6,14 @@ import {
 
 // Import types
 import type { Env, AudioProcessingParams } from "./types";
+import { AudioProcessingParamsSchema } from "./types";
 
-// Import steps
-import { initializeWorkflow } from "./initialize-workflow";
-import { encodeForProcessing } from "./encode-for-processing";
-import { prepareChunkStorage } from "./prepare-chunk-storage";
+// Import new step classes
+import { InitializeWorkflowStep } from "./initialize-workflow";
+import { EncodeForProcessingStep } from "./encode-for-processing";
+import { PrepareChunkStorageStep } from "./prepare-chunk-storage";
+
+// Import legacy functions for backward compatibility
 import { audioChunking } from "./audio-chunking";
 import { transcribeChunks } from "./transcribe-chunks";
 import { audioEncoding } from "./audio-encoding";
@@ -23,27 +26,16 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
   AudioProcessingParams
 > {
   async run(event: WorkflowEvent<AudioProcessingParams>, step: WorkflowStep) {
-    const {
-      episodeId,
-      audioR2Key,
-      chunkDuration = 30,
-      overlapDuration = 2,
-      encodingFormats = ["mp3_128"], // Changed default to single MP3 format, bitrate will be auto-adjusted
-      taskId,
-      transcriptionLanguage = "en", // Default to English to avoid mixed language issues
-    } = event.payload;
+    // Validate input parameters using Zod
+    const validatedParams = AudioProcessingParamsSchema.parse(event.payload);
 
     // Step 1: Initialize workflow and validate inputs
     const workflowState = await step.do("initialize-workflow", async () => {
-      return await initializeWorkflow(this.env, {
-        episodeId,
-        audioR2Key,
-        chunkDuration,
-        overlapDuration,
-        encodingFormats,
-        taskId,
-        transcriptionLanguage,
-      });
+      const initStep = new InitializeWorkflowStep(this.env);
+      const result = await initStep.execute(validatedParams);
+      // Return legacy format for backward compatibility
+      const { signedUrls, ...legacyResult } = result;
+      return legacyResult;
     });
 
     // Step 2: Encode audio to 48 kbps Opus mono for efficient processing
@@ -57,7 +49,11 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
         timeout: "10 minutes",
       },
       async () => {
-        return await encodeForProcessing(this.env, workflowState);
+        const encodeStep = new EncodeForProcessingStep(this.env);
+        const result = await encodeStep.execute(workflowState);
+        // Return legacy format for backward compatibility
+        const { signedUrls, ...legacyResult } = result;
+        return legacyResult;
       }
     );
 
@@ -72,7 +68,14 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
         timeout: "2 minutes",
       },
       async () => {
-        return await prepareChunkStorage(this.env, workflowState, encodedAudio);
+        const prepareStep = new PrepareChunkStorageStep(this.env);
+        const result = await prepareStep.execute({
+          workflowState,
+          encodedAudio,
+        });
+        // Return legacy format for backward compatibility
+        const { signedUrls, ...legacyResult } = result;
+        return legacyResult;
       }
     );
 
@@ -180,7 +183,7 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
 
     return {
       success: true,
-      episodeId,
+      episodeId: workflowState.episodeId,
       workflowId: workflowState.workflowId,
       ...finalResult,
     };
@@ -190,7 +193,12 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
 // Export all types
 export * from "./types";
 
-// Export all step functions
+// Export new step classes
+export { InitializeWorkflowStep } from "./initialize-workflow";
+export { EncodeForProcessingStep } from "./encode-for-processing";
+export { PrepareChunkStorageStep } from "./prepare-chunk-storage";
+
+// Export legacy step functions for backward compatibility
 export { initializeWorkflow } from "./initialize-workflow";
 export { encodeForProcessing } from "./encode-for-processing";
 export { prepareChunkStorage } from "./prepare-chunk-storage";

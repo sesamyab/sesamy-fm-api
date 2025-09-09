@@ -22,7 +22,7 @@ export async function audioChunking(
     body: JSON.stringify({
       audioUrl: audioMetadata.encodedAudioUrl, // Use encoded file
       chunkUploadUrls: audioMetadata.chunkUploadUrls,
-      outputFormat: "opus", // Use Opus format for chunks
+      outputFormat: "mp3", // Use MP3 format for chunks (supported by container)
       bitrate: 48, // Use 48 kbps to match encoding step
       chunkDuration: workflowState.chunkDuration,
       overlapDuration: workflowState.overlapDuration,
