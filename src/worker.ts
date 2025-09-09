@@ -8,7 +8,7 @@
 import { createApp } from "./app";
 import { TaskProcessor } from "./tasks/processor";
 import { EncodingContainer } from "./encoding/container";
-import { AudioProcessingWorkflow } from "./workflows/audio-processing-workflow";
+import { AudioProcessingWorkflow } from "./workflows/audio-processing";
 
 // Interface for Cloudflare Worker environment
 interface CloudflareEnv {

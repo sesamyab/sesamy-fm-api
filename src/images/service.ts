@@ -9,7 +9,7 @@ import {
 } from "../database/schema.js";
 import { eq } from "drizzle-orm";
 import { getDatabase } from "../database/client.js";
-import { R2PreSignedUrlGenerator } from "../audio/service.js";
+import { R2PreSignedUrlGenerator } from "../utils";
 
 export class ImageService {
   private r2PreSignedUrlGenerator: R2PreSignedUrlGenerator | null = null;

@@ -4,165 +4,8 @@ import { v4 as uuidv4 } from "uuid";
 import { AudioRepository } from "./repository";
 import { EventPublisher } from "../events/publisher";
 import { EpisodeRepository } from "../episodes/repository";
-import { TaskService } from "../tasks/service";
 import { NotFoundError } from "../common/errors";
-
-// AWS Signature Version 4 implementation for R2 pre-signed URLs
-export class R2PreSignedUrlGenerator {
-  private accessKeyId: string;
-  private secretAccessKey: string;
-  private region: string;
-  private service: string;
-  private endpoint?: string;
-
-  constructor(
-    accessKeyId: string,
-    secretAccessKey: string,
-    endpoint?: string,
-    region = "auto"
-  ) {
-    this.accessKeyId = accessKeyId;
-    this.secretAccessKey = secretAccessKey;
-    this.region = region;
-    this.service = "s3";
-    this.endpoint = endpoint;
-  }
-
-  async generatePresignedUrl(
-    bucketName: string,
-    key: string,
-    expiresIn: number = 28800 // 8 hours in seconds
-  ): Promise<string> {
-    const now = new Date();
-    const amzDate = now.toISOString().replace(/[:-]|\.\d{3}/g, "");
-    const dateStamp = amzDate.substring(0, 8);
-
-    // Use custom domain or R2 endpoint
-    let host: string;
-    if (this.endpoint) {
-      // Remove https:// if present and use the provided endpoint/custom domain
-      host = this.endpoint.replace(/^https?:\/\//, "");
-      console.log(`Using custom endpoint: ${this.endpoint} -> host: ${host}`);
-    } else {
-      host = `${bucketName}.r2.cloudflarestorage.com`;
-      console.log(`Using default R2 endpoint: ${host}`);
-    }
-
-    const method = "GET";
-
-    // Create canonical request
-    const canonicalUri = `/${key}`;
-    const canonicalQuerystring = this.buildCanonicalQueryString({
-      "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
-      "X-Amz-Credential": `${this.accessKeyId}/${dateStamp}/${this.region}/${this.service}/aws4_request`,
-      "X-Amz-Date": amzDate,
-      "X-Amz-Expires": expiresIn.toString(),
-      "X-Amz-SignedHeaders": "host",
-    });
-
-    const canonicalHeaders = `host:${host}\n`;
-    const signedHeaders = "host";
-    const payloadHash = "UNSIGNED-PAYLOAD";
-
-    const canonicalRequest = [
-      method,
-      canonicalUri,
-      canonicalQuerystring,
-      canonicalHeaders,
-      signedHeaders,
-      payloadHash,
-    ].join("\n");
-
-    // Create string to sign
-    const algorithm = "AWS4-HMAC-SHA256";
-    const credentialScope = `${dateStamp}/${this.region}/${this.service}/aws4_request`;
-    const canonicalRequestHash = await this.sha256Hash(canonicalRequest);
-
-    const stringToSign = [
-      algorithm,
-      amzDate,
-      credentialScope,
-      canonicalRequestHash,
-    ].join("\n");
-
-    // Calculate signature
-    const signature = await this.calculateSignature(stringToSign, dateStamp);
-
-    // Build the final URL
-    const finalQuerystring =
-      canonicalQuerystring + `&X-Amz-Signature=${signature}`;
-
-    return `https://${host}${canonicalUri}?${finalQuerystring}`;
-  }
-
-  private buildCanonicalQueryString(params: Record<string, string>): string {
-    return Object.entries(params)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(
-        ([key, value]) =>
-          `${encodeURIComponent(key)}=${encodeURIComponent(value)}`
-      )
-      .join("&");
-  }
-
-  private async sha256Hash(message: string): Promise<string> {
-    const encoder = new TextEncoder();
-    const data = encoder.encode(message);
-    const hashBuffer = await crypto.subtle.digest("SHA-256", data);
-    return Array.from(new Uint8Array(hashBuffer))
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  }
-
-  private async hmacSha256(
-    key: Uint8Array,
-    message: string
-  ): Promise<Uint8Array> {
-    // Create a clean ArrayBuffer to avoid SharedArrayBuffer type issues
-    const keyBuffer = new ArrayBuffer(key.length);
-    const keyView = new Uint8Array(keyBuffer);
-    keyView.set(key);
-
-    const cryptoKey = await crypto.subtle.importKey(
-      "raw",
-      keyBuffer,
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
-
-    const encoder = new TextEncoder();
-    const signature = await crypto.subtle.sign(
-      "HMAC",
-      cryptoKey,
-      encoder.encode(message)
-    );
-    return new Uint8Array(signature);
-  }
-
-  private async calculateSignature(
-    stringToSign: string,
-    dateStamp: string
-  ): Promise<string> {
-    const encoder = new TextEncoder();
-
-    // Create signing key
-    const kDate = await this.hmacSha256(
-      encoder.encode(`AWS4${this.secretAccessKey}`),
-      dateStamp
-    );
-    const kRegion = await this.hmacSha256(kDate, this.region);
-    const kService = await this.hmacSha256(kRegion, this.service);
-    const kSigning = await this.hmacSha256(kService, "aws4_request");
-
-    // Calculate final signature
-    const signature = await this.hmacSha256(kSigning, stringToSign);
-
-    return Array.from(signature)
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
-  }
-}
+import { R2PreSignedUrlGenerator } from "../utils";
 
 export class AudioService {
   private audioRepo: AudioRepository;
@@ -238,23 +81,21 @@ export class AudioService {
       // Store the R2 key with a special prefix for database storage
       url = `r2://${key}`;
 
-      // Generate pre-signed URL for immediate use and episode update
+      // Generate URL for immediate use and episode update
       if (this.presignedUrlGenerator) {
         try {
-          signedUrl = await this.presignedUrlGenerator.generatePresignedUrl(
+          // Use direct URL with custom domain if available
+          const directUrl = this.presignedUrlGenerator.generateDirectUrl(
             "podcast-service-assets",
-            key,
-            28800 // 8 hours
+            key
           );
+          signedUrl = directUrl || url; // Fall back to r2:// URL if no custom domain
         } catch (error) {
-          console.warn(
-            "Failed to generate pre-signed URL, using r2:// fallback:",
-            error
-          );
+          console.warn("Failed to generate URL, using r2:// fallback:", error);
           signedUrl = url;
         }
       } else {
-        console.warn("No R2 credentials available for pre-signed URLs");
+        console.warn("No R2 credentials available for URL generation");
         signedUrl = url;
       }
     } else {
@@ -289,7 +130,7 @@ export class AudioService {
     );
 
     // Process uploaded audio with workflow or fallback to tasks
-    await this.processUploadedAudio(episodeId, showId, audioId, signedUrl);
+    await this.processUploadedAudio(episodeId, showId, audioId, url); // Pass R2 key instead of signed URL
 
     // Return upload info with signed URL for immediate use
     return {
@@ -303,7 +144,7 @@ export class AudioService {
     episodeId: string,
     showId: string,
     audioId: string,
-    signedUrl: string
+    audioR2Key: string // Changed parameter name to be clearer
   ): Promise<void> {
     if (!this.audioProcessingWorkflow) {
       throw new Error(
@@ -320,10 +161,11 @@ export class AudioService {
       const workflowInstance = await this.audioProcessingWorkflow.create({
         params: {
           episodeId,
-          audioUrl: signedUrl,
+          audioR2Key, // Use R2 key instead of signed URL
           chunkDuration: 30,
           overlapDuration: 2,
           encodingFormats: ["mp3_128"], // Use MP3 format with auto-adjusted bitrate based on mono/stereo
+          transcriptionLanguage: "en", // Default to English to prevent mixed language issues
         },
       });
 
@@ -331,13 +173,32 @@ export class AudioService {
         `Started audio processing workflow ${workflowInstance.id} for episode ${episodeId}`
       );
 
+      // Generate signed URL for event payload (events may need accessible URLs)
+      let eventSignedUrl = audioR2Key;
+      if (this.presignedUrlGenerator && audioR2Key.startsWith("r2://")) {
+        try {
+          eventSignedUrl =
+            await this.presignedUrlGenerator.generatePresignedUrl(
+              audioR2Key.replace("r2://", ""),
+              "get",
+              3600 // 1 hour
+            );
+        } catch (error) {
+          console.warn(
+            "Failed to generate signed URL for event payload:",
+            error
+          );
+        }
+      }
+
       // Publish workflow started event
       await this.eventPublisher.publish(
         "episode.audio_processing_workflow_started",
         {
           episodeId,
           workflowId: workflowInstance.id,
-          audioUrl: signedUrl,
+          audioUrl: eventSignedUrl,
+          audioR2Key, // Include R2 key for workflow consumers
           type: "workflow",
         },
         episodeId
@@ -406,13 +267,32 @@ export class AudioService {
     }
 
     try {
+      // Use direct URL with custom domain if available
+      // Returns null if no custom domain is configured (avoiding broken cloudflarestorage.com URLs)
+      return this.presignedUrlGenerator.generateDirectUrl(
+        "podcast-service-assets",
+        r2Key
+      );
+    } catch (error) {
+      console.warn("Failed to generate URL for key:", r2Key, error);
+      return null;
+    }
+  }
+
+  async generatePresignedUrlFromKey(r2Key: string): Promise<string | null> {
+    if (!this.presignedUrlGenerator) {
+      return null;
+    }
+
+    try {
+      // Use presigned URL for container/server-to-server access
       return await this.presignedUrlGenerator.generatePresignedUrl(
         "podcast-service-assets",
         r2Key,
         28800 // 8 hours
       );
     } catch (error) {
-      console.warn("Failed to generate pre-signed URL for key:", r2Key, error);
+      console.warn("Failed to generate presigned URL for key:", r2Key, error);
       return null;
     }
   }

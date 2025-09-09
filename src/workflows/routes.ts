@@ -65,11 +65,11 @@ const WorkflowSearchSchema = z.object({
 // Workflow request schemas
 const audioProcessingWorkflowSchema = z.object({
   episodeId: z.string().min(1),
-  audioKey: z.string().min(1),
-  bucket: z.string().min(1),
-  chunkSizeSeconds: z.number().int().min(10).max(300).default(30),
-  overlapSeconds: z.number().int().min(0).max(10).default(2),
-  formats: z.array(z.string()).default(["mp3", "m4a"]),
+  audioR2Key: z.string().min(1),
+  chunkDuration: z.number().int().min(10).max(300).default(30),
+  overlapDuration: z.number().int().min(0).max(10).default(2),
+  encodingFormats: z.array(z.string()).default(["mp3_128"]),
+  transcriptionLanguage: z.string().optional().default("en"), // Force language to avoid mixed language issues
 });
 
 // Helper function to fetch workflow instances from Cloudflare API

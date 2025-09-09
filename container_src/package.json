@@ -4,7 +4,10 @@
   "description": "FFmpeg-based audio encoding service for Cloudflare Containers",
   "main": "index.js",
   "dependencies": {
-    "uuid": "^9.0.1"
+    "uuid": "^9.0.1",
+    "fluent-ffmpeg": "^2.1.2",
+    "hono": "^4.0.0",
+    "@hono/node-server": "^1.8.0"
   },
   "engines": {
     "node": ">=18.0.0"

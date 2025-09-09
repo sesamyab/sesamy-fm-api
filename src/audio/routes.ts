@@ -1,9 +1,8 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import jwt from "jsonwebtoken";
 import { AudioUploadSchema, AudioParamsSchema } from "./schemas";
 import { AudioService } from "./service";
-import { requireScopes, hasPermissions, hasScopes } from "../auth/middleware";
+import { hasPermissions, hasScopes } from "../auth/middleware";
 import { JWTPayload } from "../auth/types";
 import { NotFoundError } from "../common/errors";
 

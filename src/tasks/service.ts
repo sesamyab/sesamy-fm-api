@@ -1,7 +1,7 @@
 import { TaskRepository } from "./repository.js";
 import { EpisodeRepository } from "../episodes/repository.js";
 import { EventPublisher } from "../events/publisher.js";
-import { R2PreSignedUrlGenerator } from "../audio/service.js";
+import { R2PreSignedUrlGenerator } from "../utils";
 import type { Task } from "../database/schema.js";
 import { v4 as uuidv4 } from "uuid";
 
@@ -949,7 +949,7 @@ export class TaskService {
         if (this.presignedUrlGenerator) {
           try {
             console.log(
-              `Generating signed URL for chunk ${chunk.index}:`,
+              `Generating presigned URL for chunk ${chunk.index}:`,
               chunkKey
             );
             chunkUrl = await this.presignedUrlGenerator.generatePresignedUrl(
@@ -1249,13 +1249,16 @@ export class TaskService {
 
       if (this.presignedUrlGenerator) {
         try {
-          console.log("Generating signed URL for encoded audio:", encodedKey);
+          console.log(
+            "Generating presigned URL for encoded audio:",
+            encodedKey
+          );
           encodedUrl = await this.presignedUrlGenerator.generatePresignedUrl(
             bucketName,
             encodedKey,
             28800 // 8 hours expiry
           );
-          console.log("Generated signed URL:", encodedUrl);
+          console.log("Generated presigned URL:", encodedUrl);
         } catch (error) {
           console.warn("Failed to generate signed URL, using fallback:", error);
           encodedUrl = `${

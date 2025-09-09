@@ -16,6 +16,7 @@ import { createTaskRoutes } from "./tasks/routes";
 import { createEncodingRoutes } from "./encoding/routes";
 import { createTranscriptionRoutes } from "./transcription/routes";
 import { createWorkflowRoutes } from "./workflows/routes";
+import storageRoutes from "./storage/routes";
 import { EncodingContainer } from "./encoding/container";
 
 // Services
@@ -140,6 +141,9 @@ export function createApp(
 
   // Swagger UI
   app.get("/swagger", swaggerUI({ url: "/openapi.json" }));
+
+  // Storage routes for signed file operations (no auth required)
+  app.route("/storage", storageRoutes);
 
   // Health routes (no auth required)
   registerHealthRoutes(app, database);
