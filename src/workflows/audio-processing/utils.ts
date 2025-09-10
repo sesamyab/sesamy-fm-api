@@ -38,36 +38,94 @@ export async function processEncodingFormats(
       3600 // 1 hour expiration
     );
 
-    const response = await container.fetch("http://localhost:8080/encode", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        audioUrl: audioDownloadUrl.url,
-        uploadUrl: uploadResult.url,
-        outputFormat: codec,
-        bitrate,
-      }),
-    });
+    // Retry logic for container disconnections
+    const maxRetries = 3;
+    let lastError;
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(
-        `Encoding failed for ${format}: ${response.status} - ${errorText}`
-      );
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      // Create AbortController for timeout
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minute timeout
+
+      try {
+        console.log(
+          `Encoding attempt ${attempt}/${maxRetries} for format ${format}`
+        );
+
+        const response = await container.fetch("http://localhost:8080/encode", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            audioUrl: audioDownloadUrl.url,
+            uploadUrl: uploadResult.url,
+            outputFormat: codec,
+            bitrate,
+          }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
+
+        if (!response.ok) {
+          const errorText = await response.text();
+
+          // Check if this is a container disconnection error
+          if (
+            errorText.includes("Container suddenly disconnected") ||
+            errorText.includes("Container not available") ||
+            response.status === 503
+          ) {
+            throw new Error(`Container disconnected: ${errorText}`);
+          }
+
+          throw new Error(
+            `Encoding failed for ${format}: ${response.status} - ${errorText}`
+          );
+        }
+
+        const encodingData = (await response.json()) as any;
+        if (!encodingData.success) {
+          throw new Error(
+            `Encoding failed for ${format}: ${encodingData.error}`
+          );
+        }
+
+        // Success - return the result
+        return {
+          format: codec,
+          bitrate,
+          r2Key: encodedR2Key, // Workflow tracks the R2 key
+          size: encodingData.metadata.size,
+          duration: encodingData.metadata.duration,
+        };
+      } catch (error) {
+        clearTimeout(timeoutId);
+        lastError = error;
+
+        const isRetryableError =
+          error instanceof Error &&
+          (error.message.includes("Container suddenly disconnected") ||
+            error.message.includes("Container not available") ||
+            error.message.includes("AbortError") ||
+            error.message.includes("network"));
+
+        if (isRetryableError && attempt < maxRetries) {
+          console.log(
+            `Retryable error on attempt ${attempt}: ${error.message}. Retrying...`
+          );
+          // Wait with exponential backoff before retry
+          await new Promise((resolve) =>
+            setTimeout(resolve, Math.pow(2, attempt) * 1000)
+          );
+          continue;
+        } else {
+          // Non-retryable error or max retries reached
+          throw error;
+        }
+      }
     }
 
-    const encodingData = (await response.json()) as any;
-    if (!encodingData.success) {
-      throw new Error(`Encoding failed for ${format}: ${encodingData.error}`);
-    }
-
-    return {
-      format: codec,
-      bitrate,
-      r2Key: encodedR2Key, // Workflow tracks the R2 key
-      size: encodingData.metadata.size,
-      duration: encodingData.metadata.duration,
-    };
+    // If we get here, all retries failed
+    throw lastError;
   });
 
   return Promise.all(encodingPromises);

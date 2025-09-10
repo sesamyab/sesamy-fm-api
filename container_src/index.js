@@ -46,6 +46,17 @@ app.get("/health", (c) => {
   });
 });
 
+// Warmup endpoint to keep container alive and ready
+app.post("/warmup", (c) => {
+  console.log(`[WARMUP] Container warmed up at ${new Date().toISOString()}`);
+  return c.json({
+    status: "warmed",
+    service: "encoding-service-container",
+    timestamp: new Date().toISOString(),
+    message: "Container is ready for encoding tasks",
+  });
+});
+
 // Audio metadata endpoint
 app.post("/metadata", async (c) => {
   try {
@@ -331,7 +342,7 @@ app.notFound((c) => {
         "GET / - Health check",
         "POST /metadata - Get audio metadata for chunk calculation",
         "POST /encode - Encode audio with signed URL upload",
-        "POST /chunk - Chunk audio with pre-signed upload URLs",        
+        "POST /chunk - Chunk audio with pre-signed upload URLs",
         "POST /cleanup - Cleanup chunk files",
       ],
     },
@@ -487,9 +498,17 @@ function encodeAndUpload(
         console.log("FFmpeg command:", commandLine);
       });
 
+      // Set up keep-alive mechanism to prevent container timeout during long encoding
+      const keepAliveInterval = setInterval(() => {
+        console.log(
+          `[KEEPALIVE] FFmpeg encoding in progress... (${new Date().toISOString()})`
+        );
+      }, 30000); // Send keep-alive every 30 seconds
+
       command
         .save(tempOutputFile)
         .on("end", async () => {
+          clearInterval(keepAliveInterval); // Stop keep-alive when done
           try {
             const stats = await fs.stat(tempOutputFile);
             const encodedData = await fs.readFile(tempOutputFile);
@@ -560,6 +579,7 @@ function encodeAndUpload(
           }
         })
         .on("error", (error) => {
+          clearInterval(keepAliveInterval); // Stop keep-alive on error
           console.error("FFmpeg encoding error:", error);
           reject(new Error(`FFmpeg encoding failed: ${error.message}`));
         });

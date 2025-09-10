@@ -195,7 +195,13 @@ export function createApp(
 
   // Register API routes
   registerShowRoutes(app, showService, audioService, imageService);
-  registerEpisodeRoutes(app, episodeService, audioService, imageService);
+  registerEpisodeRoutes(
+    app,
+    episodeService,
+    audioService,
+    imageService,
+    bucket
+  );
   registerAudioRoutes(app, audioService);
   app.route(
     "/",

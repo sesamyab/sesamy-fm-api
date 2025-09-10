@@ -118,6 +118,20 @@ echo "📺 Getting published episode..."
 curl -s "$BASE_URL/shows/$SHOW_ID/episodes/$EPISODE_ID" \
   -H "Authorization: Bearer $TOKEN" | jq .
 
+# Test transcript endpoint (if transcript is available)
+echo ""
+echo "📝 Testing transcript endpoint..."
+echo "Getting transcript in markdown format:"
+curl -s "$BASE_URL/shows/$SHOW_ID/episodes/$EPISODE_ID/transcript" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: text/markdown"
+
+echo ""
+echo "Getting transcript in JSON format:"
+curl -s "$BASE_URL/shows/$SHOW_ID/episodes/$EPISODE_ID/transcript" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Accept: application/json" | jq .
+
 # Update show
 echo ""
 echo "✏️  Updating show..."

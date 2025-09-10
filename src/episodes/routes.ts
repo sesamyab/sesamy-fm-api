@@ -342,11 +342,54 @@ const uploadEpisodeImageRoute = createRoute({
   security: [{ Bearer: [] }],
 });
 
+// Get episode transcript
+const getEpisodeTranscriptRoute = createRoute({
+  method: "get",
+  path: "/shows/{show_id}/episodes/{episode_id}/transcript",
+  tags: ["episodes"],
+  summary: "Get episode transcript",
+  description: "Get the transcript of an episode in markdown format",
+  request: {
+    params: EpisodeParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Transcript retrieved successfully",
+      content: {
+        "text/markdown": {
+          schema: {
+            type: "string",
+          },
+        },
+        "application/json": {
+          schema: {
+            type: "object",
+            properties: {
+              transcript: { type: "string" },
+              episodeId: { type: "string" },
+              title: { type: "string" },
+              createdAt: { type: "string" },
+            },
+          },
+        },
+      },
+    },
+    404: {
+      description: "Episode or transcript not found",
+    },
+    503: {
+      description: "Transcript not available",
+    },
+  },
+  security: [{ Bearer: [] }],
+});
+
 export function registerEpisodeRoutes(
   app: OpenAPIHono,
   episodeService: EpisodeService,
   audioService?: AudioService,
-  imageService?: ImageService
+  imageService?: ImageService,
+  bucket?: R2Bucket
 ) {
   // Get episodes for a show
   app.openapi(getEpisodesRoute, async (c) => {
@@ -728,6 +771,157 @@ export function registerEpisodeRoutes(
       }
 
       throw error;
+    }
+  });
+
+  // Get episode transcript
+  app.openapi(getEpisodeTranscriptRoute, async (c) => {
+    // Check auth - look for permissions first, then fall back to scopes
+    const payload = c.get("jwtPayload") as JWTPayload;
+
+    const hasReadPermission = hasPermissions(payload, ["podcast:read"]);
+    const hasReadScope = hasScopes(payload, ["podcast.read"]);
+
+    if (!hasReadPermission && !hasReadScope) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Required permissions: podcast:read OR scopes: podcast.read",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
+    if (!bucket) {
+      const problem = {
+        type: "service_unavailable",
+        title: "Service Unavailable",
+        status: 503,
+        detail: "Transcript storage service is not available",
+        instance: c.req.path,
+      };
+      throw new HTTPException(503, { message: JSON.stringify(problem) });
+    }
+
+    const { show_id, episode_id } = c.req.valid("param");
+
+    try {
+      // First, get the episode to check if transcript exists
+      const episode = await episodeService.getEpisodeById(show_id, episode_id);
+
+      if (!episode || episode.showId !== show_id) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Episode not found",
+          instance: c.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      if (!episode.transcriptUrl) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Transcript not available for this episode",
+          instance: c.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      // Extract R2 key from transcript URL
+      // Format: https://podcast-media.sesamy.dev/transcripts/episode-id/transcript-id.txt
+      // or r2://transcripts/episode-id/transcript-id.txt
+      let transcriptKey: string;
+      if (episode.transcriptUrl.startsWith("r2://")) {
+        transcriptKey = episode.transcriptUrl.replace("r2://", "");
+      } else {
+        // Extract key from full URL
+        const url = new URL(episode.transcriptUrl);
+        const pathSegments = url.pathname.split("/");
+        // Find transcripts segment and get everything after it
+        const transcriptsIndex = pathSegments.indexOf("transcripts");
+        if (transcriptsIndex === -1) {
+          throw new Error("Invalid transcript URL format");
+        }
+        transcriptKey = pathSegments.slice(transcriptsIndex).join("/");
+      }
+
+      // Fetch transcript from R2
+      const transcriptObject = await bucket.get(transcriptKey);
+
+      if (!transcriptObject) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Transcript file not found in storage",
+          instance: c.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      const transcriptText = await transcriptObject.text();
+
+      // Check Accept header to determine response format
+      const acceptHeader = c.req.header("Accept");
+      const preferMarkdown =
+        acceptHeader?.includes("text/markdown") ||
+        acceptHeader?.includes("text/plain");
+
+      if (preferMarkdown) {
+        // Return as markdown
+        const markdownContent = `# ${episode.title}\n\n**Episode ID:** ${
+          episode.id
+        }\n**Show:** ${episode.showId}\n**Created:** ${new Date(
+          episode.createdAt
+        ).toLocaleDateString()}\n\n---\n\n## Transcript\n\n${transcriptText}`;
+
+        return new Response(markdownContent, {
+          headers: {
+            "Content-Type": "text/markdown; charset=utf-8",
+            "Cache-Control": "public, max-age=3600", // Cache for 1 hour
+          },
+        });
+      } else {
+        // Return as JSON
+        return c.json({
+          transcript: transcriptText,
+          episodeId: episode.id,
+          title: episode.title,
+          createdAt: episode.createdAt,
+          transcriptUrl: episode.transcriptUrl,
+        });
+      }
+    } catch (error: any) {
+      if (error instanceof HTTPException) {
+        throw error;
+      }
+
+      console.error("Failed to fetch transcript:", error);
+
+      if (error.message?.includes("not found")) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Episode or transcript not found",
+          instance: c.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      const problem = {
+        type: "internal_server_error",
+        title: "Internal Server Error",
+        status: 500,
+        detail: "Failed to retrieve transcript",
+        instance: c.req.path,
+      };
+      throw new HTTPException(500, { message: JSON.stringify(problem) });
     }
   });
 }

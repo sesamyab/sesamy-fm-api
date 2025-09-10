@@ -46,7 +46,7 @@ queue = "podcast-tasks"
 class_name = "EncodingContainer"
 image = "./Dockerfile.encoding"
 max_instances = 10
-instance_type = "standard"  # Use the largest available instance type (standard > basic > dev)
+instance_type = "standard"  # Use the largest available instance type for better performance
 
 # Workflow configuration
 [[workflows]]
@@ -81,7 +81,7 @@ vars = { NODE_ENV = "production" }
 
 # Limits
 [limits]
-cpu_ms = 50000
+cpu_ms = 300000  # 5 minutes CPU time for intensive audio processing
 
 # Observability - Enable logging and analytics
 [observability]
