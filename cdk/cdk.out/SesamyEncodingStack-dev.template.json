@@ -1,0 +1,783 @@
+{
+ "Resources": {
+  "EncodingLambdaRole543B2EE9": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "lambda.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+       ]
+      ]
+     },
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+       ]
+      ]
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingLambdaRole/Resource"
+   }
+  },
+  "EncodingLogGroup4571C315": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "LogGroupName": "/aws/lambda/sesamy-encoding-dev",
+    "RetentionInDays": 14
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingLogGroup/Resource"
+   }
+  },
+  "EncodingFunctionABC530E0": {
+   "Type": "AWS::Lambda::Function",
+   "Properties": {
+    "Architectures": [
+     "x86_64"
+    ],
+    "Code": {
+     "ImageUri": {
+      "Fn::Join": [
+       "",
+       [
+        "610396205502.dkr.ecr.eu-west-1.",
+        {
+         "Ref": "AWS::URLSuffix"
+        },
+        "/sesamy-encoding-dev:latest"
+       ]
+      ]
+     }
+    },
+    "Environment": {
+     "Variables": {
+      "NODE_ENV": "dev"
+     }
+    },
+    "EphemeralStorage": {
+     "Size": 10240
+    },
+    "FunctionName": "sesamy-encoding-dev",
+    "MemorySize": 10240,
+    "PackageType": "Image",
+    "Role": {
+     "Fn::GetAtt": [
+      "EncodingLambdaRole543B2EE9",
+      "Arn"
+     ]
+    },
+    "Timeout": 900
+   },
+   "DependsOn": [
+    "EncodingLambdaRole543B2EE9"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingFunction/Resource"
+   }
+  },
+  "EncodingFunctionFunctionUrl81AB5723": {
+   "Type": "AWS::Lambda::Url",
+   "Properties": {
+    "AuthType": "NONE",
+    "Cors": {
+     "AllowHeaders": [
+      "*"
+     ],
+     "AllowMethods": [
+      "*"
+     ],
+     "AllowOrigins": [
+      "*"
+     ],
+     "MaxAge": 86400
+    },
+    "TargetFunctionArn": {
+     "Fn::GetAtt": [
+      "EncodingFunctionABC530E0",
+      "Arn"
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingFunction/FunctionUrl/Resource"
+   }
+  },
+  "EncodingFunctioninvokefunctionurl980103BA": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunctionUrl",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "EncodingFunctionABC530E0",
+      "Arn"
+     ]
+    },
+    "FunctionUrlAuthType": "NONE",
+    "Principal": "*"
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingFunction/invoke-function-url"
+   }
+  },
+  "EncodingFunctionApiGatewayInvoke1ED8A6E9": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "EncodingFunctionABC530E0",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:eu-west-1:610396205502:",
+       {
+        "Ref": "EncodingApi29D606F9"
+       },
+       "/*/*/*"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingFunction/ApiGatewayInvoke"
+   }
+  },
+  "EncodingApi29D606F9": {
+   "Type": "AWS::ApiGateway::RestApi",
+   "Properties": {
+    "Description": "FFmpeg Encoding Service API - dev",
+    "Name": "sesamy-encoding-api-dev"
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Resource"
+   }
+  },
+  "EncodingApiCloudWatchRole235B2E3C": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "apigateway.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "ManagedPolicyArns": [
+     {
+      "Fn::Join": [
+       "",
+       [
+        "arn:",
+        {
+         "Ref": "AWS::Partition"
+        },
+        ":iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+       ]
+      ]
+     }
+    ]
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/CloudWatchRole/Resource"
+   }
+  },
+  "EncodingApiAccount1927E7BD": {
+   "Type": "AWS::ApiGateway::Account",
+   "Properties": {
+    "CloudWatchRoleArn": {
+     "Fn::GetAtt": [
+      "EncodingApiCloudWatchRole235B2E3C",
+      "Arn"
+     ]
+    }
+   },
+   "DependsOn": [
+    "EncodingApi29D606F9"
+   ],
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Account"
+   }
+  },
+  "EncodingApiDeploymentD5703D1404ffca8d44a5911eb5f65b72530c760d": {
+   "Type": "AWS::ApiGateway::Deployment",
+   "Properties": {
+    "Description": "FFmpeg Encoding Service API - dev",
+    "RestApiId": {
+     "Ref": "EncodingApi29D606F9"
+    }
+   },
+   "DependsOn": [
+    "EncodingApiproxyANY52DD99CE",
+    "EncodingApiproxyOPTIONS1264B526",
+    "EncodingApiproxyBB2851FA",
+    "EncodingApiANY68AB566C",
+    "EncodingApiOPTIONS060B8E0F"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Deployment/Resource"
+   }
+  },
+  "EncodingApiDeploymentStagedev02BC6828": {
+   "Type": "AWS::ApiGateway::Stage",
+   "Properties": {
+    "DeploymentId": {
+     "Ref": "EncodingApiDeploymentD5703D1404ffca8d44a5911eb5f65b72530c760d"
+    },
+    "MethodSettings": [
+     {
+      "DataTraceEnabled": true,
+      "HttpMethod": "*",
+      "LoggingLevel": "INFO",
+      "ResourcePath": "/*"
+     }
+    ],
+    "RestApiId": {
+     "Ref": "EncodingApi29D606F9"
+    },
+    "StageName": "dev"
+   },
+   "DependsOn": [
+    "EncodingApiAccount1927E7BD"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/DeploymentStage.dev/Resource"
+   }
+  },
+  "EncodingApiOPTIONS060B8E0F": {
+   "Type": "AWS::ApiGateway::Method",
+   "Properties": {
+    "ApiKeyRequired": false,
+    "AuthorizationType": "NONE",
+    "HttpMethod": "OPTIONS",
+    "Integration": {
+     "IntegrationResponses": [
+      {
+       "ResponseParameters": {
+        "method.response.header.Access-Control-Allow-Headers": "'Content-Type,Authorization'",
+        "method.response.header.Access-Control-Allow-Origin": "'*'",
+        "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+       },
+       "StatusCode": "204"
+      }
+     ],
+     "RequestTemplates": {
+      "application/json": "{ statusCode: 200 }"
+     },
+     "Type": "MOCK"
+    },
+    "MethodResponses": [
+     {
+      "ResponseParameters": {
+       "method.response.header.Access-Control-Allow-Headers": true,
+       "method.response.header.Access-Control-Allow-Origin": true,
+       "method.response.header.Access-Control-Allow-Methods": true
+      },
+      "StatusCode": "204"
+     }
+    ],
+    "ResourceId": {
+     "Fn::GetAtt": [
+      "EncodingApi29D606F9",
+      "RootResourceId"
+     ]
+    },
+    "RestApiId": {
+     "Ref": "EncodingApi29D606F9"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Default/OPTIONS/Resource"
+   }
+  },
+  "EncodingApiproxyBB2851FA": {
+   "Type": "AWS::ApiGateway::Resource",
+   "Properties": {
+    "ParentId": {
+     "Fn::GetAtt": [
+      "EncodingApi29D606F9",
+      "RootResourceId"
+     ]
+    },
+    "PathPart": "{proxy+}",
+    "RestApiId": {
+     "Ref": "EncodingApi29D606F9"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Default/{proxy+}/Resource"
+   }
+  },
+  "EncodingApiproxyOPTIONS1264B526": {
+   "Type": "AWS::ApiGateway::Method",
+   "Properties": {
+    "ApiKeyRequired": false,
+    "AuthorizationType": "NONE",
+    "HttpMethod": "OPTIONS",
+    "Integration": {
+     "IntegrationResponses": [
+      {
+       "ResponseParameters": {
+        "method.response.header.Access-Control-Allow-Headers": "'Content-Type,Authorization'",
+        "method.response.header.Access-Control-Allow-Origin": "'*'",
+        "method.response.header.Access-Control-Allow-Methods": "'OPTIONS,GET,PUT,POST,DELETE,PATCH,HEAD'"
+       },
+       "StatusCode": "204"
+      }
+     ],
+     "RequestTemplates": {
+      "application/json": "{ statusCode: 200 }"
+     },
+     "Type": "MOCK"
+    },
+    "MethodResponses": [
+     {
+      "ResponseParameters": {
+       "method.response.header.Access-Control-Allow-Headers": true,
+       "method.response.header.Access-Control-Allow-Origin": true,
+       "method.response.header.Access-Control-Allow-Methods": true
+      },
+      "StatusCode": "204"
+     }
+    ],
+    "ResourceId": {
+     "Ref": "EncodingApiproxyBB2851FA"
+    },
+    "RestApiId": {
+     "Ref": "EncodingApi29D606F9"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Default/{proxy+}/OPTIONS/Resource"
+   }
+  },
+  "EncodingApiproxyANYApiPermissionSesamyEncodingStackdevEncodingApiCCFEBD9DANYproxy34D30179": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "EncodingFunctionABC530E0",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:eu-west-1:610396205502:",
+       {
+        "Ref": "EncodingApi29D606F9"
+       },
+       "/",
+       {
+        "Ref": "EncodingApiDeploymentStagedev02BC6828"
+       },
+       "/*/*"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Default/{proxy+}/ANY/ApiPermission.SesamyEncodingStackdevEncodingApiCCFEBD9D.ANY..{proxy+}"
+   }
+  },
+  "EncodingApiproxyANYApiPermissionTestSesamyEncodingStackdevEncodingApiCCFEBD9DANYproxyA86A6A49": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "EncodingFunctionABC530E0",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:eu-west-1:610396205502:",
+       {
+        "Ref": "EncodingApi29D606F9"
+       },
+       "/test-invoke-stage/*/*"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Default/{proxy+}/ANY/ApiPermission.Test.SesamyEncodingStackdevEncodingApiCCFEBD9D.ANY..{proxy+}"
+   }
+  },
+  "EncodingApiproxyANY52DD99CE": {
+   "Type": "AWS::ApiGateway::Method",
+   "Properties": {
+    "AuthorizationType": "NONE",
+    "HttpMethod": "ANY",
+    "Integration": {
+     "IntegrationHttpMethod": "POST",
+     "RequestTemplates": {
+      "application/json": "{ \"statusCode\": \"200\" }"
+     },
+     "Type": "AWS_PROXY",
+     "Uri": {
+      "Fn::Join": [
+       "",
+       [
+        "arn:aws:apigateway:eu-west-1:lambda:path/2015-03-31/functions/",
+        {
+         "Fn::GetAtt": [
+          "EncodingFunctionABC530E0",
+          "Arn"
+         ]
+        },
+        "/invocations"
+       ]
+      ]
+     }
+    },
+    "ResourceId": {
+     "Ref": "EncodingApiproxyBB2851FA"
+    },
+    "RestApiId": {
+     "Ref": "EncodingApi29D606F9"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Default/{proxy+}/ANY/Resource"
+   }
+  },
+  "EncodingApiANYApiPermissionSesamyEncodingStackdevEncodingApiCCFEBD9DANYE869DE82": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "EncodingFunctionABC530E0",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:eu-west-1:610396205502:",
+       {
+        "Ref": "EncodingApi29D606F9"
+       },
+       "/",
+       {
+        "Ref": "EncodingApiDeploymentStagedev02BC6828"
+       },
+       "/*/"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Default/ANY/ApiPermission.SesamyEncodingStackdevEncodingApiCCFEBD9D.ANY.."
+   }
+  },
+  "EncodingApiANYApiPermissionTestSesamyEncodingStackdevEncodingApiCCFEBD9DANY950C8C5B": {
+   "Type": "AWS::Lambda::Permission",
+   "Properties": {
+    "Action": "lambda:InvokeFunction",
+    "FunctionName": {
+     "Fn::GetAtt": [
+      "EncodingFunctionABC530E0",
+      "Arn"
+     ]
+    },
+    "Principal": "apigateway.amazonaws.com",
+    "SourceArn": {
+     "Fn::Join": [
+      "",
+      [
+       "arn:aws:execute-api:eu-west-1:610396205502:",
+       {
+        "Ref": "EncodingApi29D606F9"
+       },
+       "/test-invoke-stage/*/"
+      ]
+     ]
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Default/ANY/ApiPermission.Test.SesamyEncodingStackdevEncodingApiCCFEBD9D.ANY.."
+   }
+  },
+  "EncodingApiANY68AB566C": {
+   "Type": "AWS::ApiGateway::Method",
+   "Properties": {
+    "AuthorizationType": "NONE",
+    "HttpMethod": "ANY",
+    "Integration": {
+     "IntegrationHttpMethod": "POST",
+     "RequestTemplates": {
+      "application/json": "{ \"statusCode\": \"200\" }"
+     },
+     "Type": "AWS_PROXY",
+     "Uri": {
+      "Fn::Join": [
+       "",
+       [
+        "arn:aws:apigateway:eu-west-1:lambda:path/2015-03-31/functions/",
+        {
+         "Fn::GetAtt": [
+          "EncodingFunctionABC530E0",
+          "Arn"
+         ]
+        },
+        "/invocations"
+       ]
+      ]
+     }
+    },
+    "ResourceId": {
+     "Fn::GetAtt": [
+      "EncodingApi29D606F9",
+      "RootResourceId"
+     ]
+    },
+    "RestApiId": {
+     "Ref": "EncodingApi29D606F9"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Default/ANY/Resource"
+   }
+  },
+  "EncodingDashboard6916285A": {
+   "Type": "AWS::CloudWatch::Dashboard",
+   "Properties": {
+    "DashboardBody": {
+     "Fn::Join": [
+      "",
+      [
+       "{\"widgets\":[{\"type\":\"metric\",\"width\":6,\"height\":6,\"x\":0,\"y\":0,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Lambda Invocations\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/Lambda\",\"Invocations\",\"FunctionName\",\"",
+       {
+        "Ref": "EncodingFunctionABC530E0"
+       },
+       "\",{\"stat\":\"Sum\"}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":6,\"height\":6,\"x\":6,\"y\":0,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Lambda Duration\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/Lambda\",\"Duration\",\"FunctionName\",\"",
+       {
+        "Ref": "EncodingFunctionABC530E0"
+       },
+       "\"]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":6,\"height\":6,\"x\":12,\"y\":0,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Lambda Errors\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"AWS/Lambda\",\"Errors\",\"FunctionName\",\"",
+       {
+        "Ref": "EncodingFunctionABC530E0"
+       },
+       "\",{\"stat\":\"Sum\"}]],\"yAxis\":{}}}]}"
+      ]
+     ]
+    },
+    "DashboardName": "sesamy-encoding-dev-eu-west-1"
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/EncodingDashboard/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/1WPTU7DMBCFz9K9M4TCBQoV3YBAqVijiTMkbh1PZI+JIit3R0mTQlfvm/c0f1u4z3PIN9iHTFfnzJoS0lFQnxX24SuR9lBQx8EI++EJAymDLaSCLannbzfpqCzXAdIr1wfPsZv8lUdlsS0rhPQSnRbDbkqvvMKnt5O/yAf51oRg2I0KO1OjUI8DpIKC7Doz7/3DndYcnag9dZaHlpxM7r/qKFjPx16goMDRa5qfeSNpuJrChdZ0WTLzqLTlWPUouoG0x9CUjH7uuhbjeNP6HqWLcjvEcUVwCnc/2wd4hHxzCsZkPjoxLUFx0V/Bs2HekAEAAA=="
+   },
+   "Metadata": {
+    "aws:cdk:path": "SesamyEncodingStack-dev/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "EncodingApiEndpoint0B6955A5": {
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "https://",
+      {
+       "Ref": "EncodingApi29D606F9"
+      },
+      ".execute-api.eu-west-1.",
+      {
+       "Ref": "AWS::URLSuffix"
+      },
+      "/",
+      {
+       "Ref": "EncodingApiDeploymentStagedev02BC6828"
+      },
+      "/"
+     ]
+    ]
+   }
+  },
+  "ECRRepositoryUri": {
+   "Description": "ECR Repository URI",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "610396205502.dkr.ecr.eu-west-1.",
+      {
+       "Ref": "AWS::URLSuffix"
+      },
+      "/sesamy-encoding-dev"
+     ]
+    ]
+   },
+   "Export": {
+    "Name": "sesamy-encoding-ecr-dev"
+   }
+  },
+  "LambdaFunctionName": {
+   "Description": "Lambda Function Name",
+   "Value": {
+    "Ref": "EncodingFunctionABC530E0"
+   },
+   "Export": {
+    "Name": "sesamy-encoding-function-dev"
+   }
+  },
+  "LambdaFunctionUrl": {
+   "Description": "Lambda Function URL",
+   "Value": {
+    "Fn::GetAtt": [
+     "EncodingFunctionFunctionUrl81AB5723",
+     "FunctionUrl"
+    ]
+   },
+   "Export": {
+    "Name": "sesamy-encoding-url-dev"
+   }
+  },
+  "ApiGatewayUrl": {
+   "Description": "API Gateway URL",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "https://",
+      {
+       "Ref": "EncodingApi29D606F9"
+      },
+      ".execute-api.eu-west-1.",
+      {
+       "Ref": "AWS::URLSuffix"
+      },
+      "/",
+      {
+       "Ref": "EncodingApiDeploymentStagedev02BC6828"
+      },
+      "/"
+     ]
+    ]
+   },
+   "Export": {
+    "Name": "sesamy-encoding-api-dev"
+   }
+  },
+  "DashboardUrl": {
+   "Description": "CloudWatch Dashboard URL",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#dashboards:name=",
+      {
+       "Ref": "EncodingDashboard6916285A"
+      }
+     ]
+    ]
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

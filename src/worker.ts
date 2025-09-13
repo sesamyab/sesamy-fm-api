@@ -25,6 +25,10 @@ interface CloudflareEnv {
   ENCODING_CONTAINER: DurableObjectNamespace;
   AUDIO_PROCESSING_WORKFLOW?: Workflow;
   IMPORT_SHOW_WORKFLOW?: Workflow;
+  // AWS Lambda encoding service configuration (optional)
+  AWS_LAMBDA_ENCODING_URL?: string;
+  AWS_LAMBDA_API_KEY?: string;
+  ENCODING_SERVICE_PROVIDER?: string;
 }
 
 export default {
@@ -44,10 +48,18 @@ export default {
       env.TASK_QUEUE,
       env.ENCODING_CONTAINER,
       env.AUDIO_PROCESSING_WORKFLOW,
-      env.IMPORT_SHOW_WORKFLOW
+      env.IMPORT_SHOW_WORKFLOW,
+      env.AWS_LAMBDA_ENCODING_URL,
+      env.AWS_LAMBDA_API_KEY
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;
+    }
+    if (
+      env.ENCODING_SERVICE_PROVIDER &&
+      !process.env.ENCODING_SERVICE_PROVIDER
+    ) {
+      process.env.ENCODING_SERVICE_PROVIDER = env.ENCODING_SERVICE_PROVIDER;
     }
     // Don't modify NODE_ENV as it's a compile-time constant in Workers
 

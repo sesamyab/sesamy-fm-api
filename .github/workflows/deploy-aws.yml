@@ -1,0 +1,182 @@
+name: Deploy FFmpeg Service to AWS Lambda
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "container_src/**"
+      - "lambda/**"
+      - "Dockerfile.lambda"
+      - "aws/**"
+      - ".github/workflows/deploy-aws.yml"
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Environment to deploy to"
+        required: true
+        default: "dev"
+        type: choice
+        options:
+          - dev
+          - staging
+          - prod
+
+env:
+  AWS_REGION: us-east-1
+  PROJECT_NAME: sesamy-encoding
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'dev' }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.5.0
+
+      - name: Login to Amazon ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Initialize Terraform
+        run: |
+          cd aws
+          terraform init
+
+      - name: Plan Terraform
+        run: |
+          cd aws
+          terraform plan \
+            -var="project_name=${{ env.PROJECT_NAME }}" \
+            -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
+            -var="aws_region=${{ env.AWS_REGION }}"
+
+      - name: Apply Terraform
+        run: |
+          cd aws
+          terraform apply \
+            -var="project_name=${{ env.PROJECT_NAME }}" \
+            -var="environment=${{ github.event.inputs.environment || 'dev' }}" \
+            -var="aws_region=${{ env.AWS_REGION }}" \
+            -auto-approve
+
+      - name: Get ECR repository URL
+        id: ecr-url
+        run: |
+          cd aws
+          ECR_URL=$(terraform output -raw ecr_repository_url)
+          echo "ecr_url=$ECR_URL" >> $GITHUB_OUTPUT
+
+      - name: Build, tag, and push image to Amazon ECR
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ env.PROJECT_NAME }}-${{ github.event.inputs.environment || 'dev' }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          # Build image
+          docker build -f Dockerfile.lambda -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker tag $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+          # Push image
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
+
+      - name: Update Lambda function
+        run: |
+          FUNCTION_NAME="${{ env.PROJECT_NAME }}-${{ github.event.inputs.environment || 'dev' }}"
+          aws lambda update-function-code \
+            --function-name $FUNCTION_NAME \
+            --image-uri ${{ steps.ecr-url.outputs.ecr_url }}:latest \
+            --region ${{ env.AWS_REGION }}
+
+          # Wait for function to be updated
+          aws lambda wait function-updated \
+            --function-name $FUNCTION_NAME \
+            --region ${{ env.AWS_REGION }}
+
+      - name: Test deployment
+        run: |
+          cd aws
+          LAMBDA_URL=$(terraform output -raw lambda_function_url)
+
+          # Test health endpoint
+          echo "Testing health endpoint..."
+          response=$(curl -s -w "\n%{http_code}" "$LAMBDA_URL")
+          http_code=$(echo "$response" | tail -n1)
+
+          if [ "$http_code" != "200" ]; then
+            echo "Health check failed with HTTP code: $http_code"
+            echo "Response: $(echo "$response" | sed '$d')"
+            exit 1
+          fi
+
+          echo "✅ Health check passed!"
+
+          # Test encoding endpoint
+          echo "Testing encoding endpoint..."
+          test_response=$(curl -s -X POST "$LAMBDA_URL/test" \
+            -H "Content-Type: application/json" \
+            -d '{"outputFormat": "mp3", "bitrate": 128}' \
+            -w "\n%{http_code}")
+
+          test_http_code=$(echo "$test_response" | tail -n1)
+
+          if [ "$test_http_code" != "200" ]; then
+            echo "Encoding test failed with HTTP code: $test_http_code"
+            echo "Response: $(echo "$test_response" | sed '$d')"
+            exit 1
+          fi
+
+          echo "✅ Encoding test passed!"
+          echo "🎉 Deployment completed successfully!"
+          echo "Lambda Function URL: $LAMBDA_URL"
+
+      - name: Comment PR with deployment info
+        if: github.event_name == 'pull_request'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const { execSync } = require('child_process');
+
+            // Get deployment URLs
+            const lambdaUrl = execSync('cd aws && terraform output -raw lambda_function_url', { encoding: 'utf8' }).trim();
+
+            const comment = `## 🚀 AWS Lambda Deployment Complete
+
+            **Environment:** ${{ github.event.inputs.environment || 'dev' }}
+            **Region:** ${{ env.AWS_REGION }}
+
+            ### 🔗 URLs
+            - **Lambda Function URL:** ${lambdaUrl}
+
+            ### 🧪 Test Endpoints
+            - Health: \`GET ${lambdaUrl}\`
+            - Test Encoding: \`POST ${lambdaUrl}/test\`
+            - Metadata: \`POST ${lambdaUrl}/metadata\`
+            - Encode: \`POST ${lambdaUrl}/encode\`
+
+            ### 📊 Configuration
+            - **Memory:** 10,240 MB (Maximum)
+            - **Timeout:** 15 minutes
+            - **Storage:** 10 GB ephemeral
+            `;
+
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

@@ -1,0 +1,20 @@
+{
+  "version": "34.0.0",
+  "files": {
+    "dba77e93e45e5b1d5abee7bb5209ee6f6d695bcea6f73bcbe7ff9ad53bbcd4b9": {
+      "source": {
+        "path": "SesamyEncodingStack-dev.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "610396205502-eu-west-1": {
+          "bucketName": "cdk-hnb659fds-assets-610396205502-eu-west-1",
+          "objectKey": "dba77e93e45e5b1d5abee7bb5209ee6f6d695bcea6f73bcbe7ff9ad53bbcd4b9.json",
+          "region": "eu-west-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::610396205502:role/cdk-hnb659fds-file-publishing-role-610396205502-eu-west-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

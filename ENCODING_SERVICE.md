@@ -34,7 +34,26 @@ docker run -p 3000:3000 encoding-service
 
 ### 2. Main Service Configuration
 
-Set the encoding service URL in your environment:
+Configure the encoding service endpoint in your environment:
+
+#### **Service Provider Selection**
+
+```bash
+# Choose encoding service provider (defaults to 'aws' if not set)
+export ENCODING_SERVICE_PROVIDER=aws      # Use AWS Lambda (default)
+# or
+export ENCODING_SERVICE_PROVIDER=cloudflare  # Use Cloudflare Container
+```
+
+#### **For AWS Lambda Deployment**
+
+```bash
+# Set the Lambda Function URL from CDK deployment
+export AWS_LAMBDA_ENCODING_URL=https://your-lambda-url.lambda-url.us-east-1.on.aws
+export AWS_LAMBDA_API_KEY=optional-api-key  # if using secured access
+```
+
+#### **For Container Deployment**
 
 ```bash
 # For local development
@@ -43,6 +62,12 @@ export ENCODING_SERVICE_URL=http://localhost:3000
 # For production (update with your deployed service URL)
 export ENCODING_SERVICE_URL=https://your-encoding-service.example.com
 ```
+
+**Service Selection Logic:**
+
+- If `ENCODING_SERVICE_PROVIDER=aws` and AWS Lambda URL is configured → Uses AWS Lambda
+- If `ENCODING_SERVICE_PROVIDER=cloudflare` and Cloudflare container is available → Uses Cloudflare Container
+- Fallback: Uses any available service (AWS Lambda preferred)
 
 ### 3. Testing
 
@@ -74,7 +99,21 @@ curl -X POST http://localhost:3000/test \
 
 ### Encoding Service Deployment
 
-The encoding service needs to be deployed to a platform that supports Docker containers with FFmpeg:
+The encoding service supports multiple deployment options:
+
+#### **AWS Lambda (Recommended)**
+
+- **Maximum Performance**: 10,240 MB memory, 15-minute timeout
+- **Auto-scaling**: Handles concurrent requests automatically
+- **Cost Effective**: Pay only for actual usage
+- **Deployment**: Use AWS CDK (see `cdk/` directory)
+
+```bash
+cd cdk
+./deploy.sh
+```
+
+#### **Other Container Platforms**
 
 1. **Railway**: Easy Docker deployment
 2. **Fly.io**: Supports Docker with good performance

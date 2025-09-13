@@ -1,0 +1,35 @@
+# Dockerfile specifically for AWS Lambda
+# syntax=docker/dockerfile:1
+
+FROM public.ecr.aws/lambda/nodejs:18
+
+# Install dependencies for unpacking ffmpeg
+RUN yum install -y tar xz wget && \
+    cd /tmp && \
+    wget https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz && \
+    tar -xf ffmpeg-release-amd64-static.tar.xz && \
+    mv ffmpeg-*-amd64-static/ffmpeg /usr/local/bin/ && \
+    mv ffmpeg-*-amd64-static/ffprobe /usr/local/bin/ && \
+    chmod +x /usr/local/bin/ffmpeg /usr/local/bin/ffprobe && \
+    rm -rf /tmp/ffmpeg* && \
+    yum remove -y wget tar xz && \
+    yum clean all
+
+# Set working directory
+WORKDIR ${LAMBDA_TASK_ROOT}
+
+# Copy package files from container source
+COPY container_src/package*.json ./
+
+# Install dependencies
+RUN npm ci --only=production
+
+# Copy source code
+COPY container_src/ ./
+COPY lambda/ ./
+
+# Copy the Lambda handler
+COPY lambda/lambda-handler.js ./
+
+# Lambda runtime handler
+CMD ["lambda-handler.handler"]

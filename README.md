@@ -132,7 +132,36 @@ curl -X POST https://your-service.workers.dev/tasks \
   }'
 ```
 
-## Container Configuration
+## Encoding Service Configuration
+
+The service supports **two encoding backends** that can be configured via environment variables:
+
+### Service Provider Selection
+
+Set the preferred encoding service in `wrangler.toml`:
+
+```toml
+[vars]
+# Choose encoding service: 'aws' (default) or 'cloudflare'
+ENCODING_SERVICE_PROVIDER = "aws"
+```
+
+**Available Options:**
+
+- `aws` - **AWS Lambda** (default, recommended for production)
+- `cloudflare` - **Cloudflare Container** (good for development)
+
+### AWS Lambda Configuration (Recommended)
+
+AWS Lambda provides maximum performance with 10GB memory and 15-minute timeout:
+
+```toml
+[vars]
+ENCODING_SERVICE_PROVIDER = "aws"
+AWS_LAMBDA_ENCODING_URL = "https://your-lambda-url.lambda-url.eu-west-1.on.aws"
+```
+
+### Cloudflare Container Configuration
 
 The encoding container is configured in `wrangler.toml`:
 
@@ -146,6 +175,8 @@ max_instances = 10
 class_name = "EncodingContainer"
 name = "ENCODING_CONTAINER"
 ```
+
+**Automatic Fallback:** If the preferred service is unavailable, the system automatically falls back to the alternative option.
 
 ## Supported Audio Formats
 

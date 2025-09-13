@@ -1,22 +1,39 @@
 import { OpenAPIHono } from "@hono/zod-openapi";
+import { createEncodingService } from "./service";
 
 export function createEncodingRoutes(
   encodingContainer?: DurableObjectNamespace,
   database?: D1Database,
   bucket?: R2Bucket,
   ai?: Ai,
-  queue?: Queue
+  queue?: Queue,
+  awsLambdaUrl?: string,
+  awsApiKey?: string
 ) {
   const app = new OpenAPIHono();
 
-  // Skip if no encoding container is available
-  if (!encodingContainer) {
+  // Create encoding service instance
+  let encodingService: ReturnType<typeof createEncodingService> | null = null;
+
+  try {
+    encodingService = createEncodingService(
+      encodingContainer,
+      awsLambdaUrl,
+      awsApiKey
+    );
+  } catch (error) {
+    console.error("Failed to create encoding service:", error);
+  }
+
+  // Skip if no encoding service is available
+  if (!encodingService) {
     app.get("/encoding", (c) => {
       return c.json(
         {
           status: "unavailable",
           service: "encoding-service",
-          message: "Encoding container not configured",
+          message:
+            "No encoding service configured (neither Cloudflare container nor AWS Lambda)",
         },
         503
       );
@@ -29,27 +46,86 @@ export function createEncodingRoutes(
     return c.json({
       status: "ok",
       service: "encoding-service",
+      type: awsLambdaUrl ? "aws-lambda" : "cloudflare-container",
       endpoints: [
         "GET /encoding - Health check and available endpoints",
         "POST /encoding/encode - Encode provided audio URL",
-        "POST /encoding/batch - Batch encode multiple files",
+        "POST /encoding/metadata - Get audio metadata",
+        "POST /encoding/test - Test encoding functionality",
+        "POST /encoding/warmup - Warmup the encoding service",
       ],
       timestamp: new Date().toISOString(),
     });
   });
 
+  // Encode audio endpoint
   app.post("/encoding/encode", async (c) => {
-    const sessionId = `encode-${Date.now()}`;
-    const containerId = encodingContainer.idFromName(sessionId);
-    const container = encodingContainer.get(containerId);
-    return await container.fetch(c.req.raw);
+    try {
+      const body = await c.req.json();
+      const result = await encodingService.encode(body);
+      return c.json(result);
+    } catch (error) {
+      return c.json(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+          timestamp: new Date().toISOString(),
+        },
+        500
+      );
+    }
   });
 
-  app.post("/encoding/batch", async (c) => {
-    const sessionId = `batch-${Date.now()}`;
-    const containerId = encodingContainer.idFromName(sessionId);
-    const container = encodingContainer.get(containerId);
-    return await container.fetch(c.req.raw);
+  // Get audio metadata endpoint
+  app.post("/encoding/metadata", async (c) => {
+    try {
+      const body = await c.req.json();
+      const result = await encodingService.getMetadata(body);
+      return c.json(result);
+    } catch (error) {
+      return c.json(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        500
+      );
+    }
+  });
+
+  // Test encoding endpoint
+  app.post("/encoding/test", async (c) => {
+    try {
+      const body = await c.req.json();
+      const { outputFormat = "mp3", bitrate = 128 } = body;
+      const result = await encodingService.testEncoding(outputFormat, bitrate);
+      return c.json(result);
+    } catch (error) {
+      return c.json(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+          timestamp: new Date().toISOString(),
+        },
+        500
+      );
+    }
+  });
+
+  // Warmup endpoint
+  app.post("/encoding/warmup", async (c) => {
+    try {
+      const result = await encodingService.warmup();
+      return c.json(result);
+    } catch (error) {
+      return c.json(
+        {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        },
+        500
+      );
+    }
   });
 
   return app;

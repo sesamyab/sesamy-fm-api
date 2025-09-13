@@ -38,7 +38,9 @@ export function createApp(
   queue?: Queue,
   encodingContainer?: DurableObjectNamespace,
   audioProcessingWorkflow?: Workflow,
-  importShowWorkflow?: Workflow
+  importShowWorkflow?: Workflow,
+  awsLambdaUrl?: string,
+  awsApiKey?: string
 ) {
   const app = new OpenAPIHono();
 
@@ -138,7 +140,15 @@ export function createApp(
   // Encoding routes
   app.route(
     "/",
-    createEncodingRoutes(encodingContainer, database, bucket, ai, queue)
+    createEncodingRoutes(
+      encodingContainer,
+      database,
+      bucket,
+      ai,
+      queue,
+      awsLambdaUrl,
+      awsApiKey
+    )
   );
 
   // All other routes require authentication
@@ -183,7 +193,15 @@ export function createApp(
   app.route("/", createTaskRoutes(database));
   app.route(
     "/",
-    createEncodingRoutes(encodingContainer, database, bucket, ai, queue)
+    createEncodingRoutes(
+      encodingContainer,
+      database,
+      bucket,
+      ai,
+      queue,
+      awsLambdaUrl,
+      awsApiKey
+    )
   );
 
   app.route("/", createWorkflowRoutes());

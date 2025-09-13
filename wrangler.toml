@@ -9,6 +9,8 @@ NODE_ENV = "development"
 PORT = "8787"
 R2_ENDPOINT = "https://podcast-media.sesamy.dev"
 SERVICE_BASE_URL = "https://podcast-service.sesamy-dev.workers.dev"
+# Encoding service provider: 'aws' (default) or 'cloudflare'
+ENCODING_SERVICE_PROVIDER = "aws"
 
 # Secrets to be set with: wrangler secret put <name>
 # - DATABASE_URL (for production Turso database)
