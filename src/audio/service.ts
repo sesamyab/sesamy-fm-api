@@ -14,6 +14,7 @@ export class AudioService {
   private audioProcessingWorkflow?: Workflow;
   private bucket: R2Bucket;
   private presignedUrlGenerator: R2PreSignedUrlGenerator | null = null;
+  private database?: D1Database;
 
   constructor(
     database?: D1Database,
@@ -24,11 +25,16 @@ export class AudioService {
     r2Endpoint?: string,
     audioProcessingWorkflow?: Workflow
   ) {
+    this.database = database;
     this.audioRepo = new AudioRepository(database);
     this.episodeRepo = new EpisodeRepository(database);
     this.eventPublisher = eventPublisher || new EventPublisher();
     this.audioProcessingWorkflow = audioProcessingWorkflow;
     this.bucket = bucket as R2Bucket;
+
+    console.log(
+      `AudioService initialized with workflow: ${!!audioProcessingWorkflow}`
+    );
 
     // Initialize pre-signed URL generator if credentials are available
     if (r2AccessKeyId && r2SecretAccessKey) {
@@ -105,32 +111,77 @@ export class AudioService {
     }
 
     // Save audio metadata with R2 key
-    const audioUpload = await this.audioRepo.create({
-      id: audioId,
-      episodeId,
-      fileName: file.fileName,
-      fileSize: file.fileSize,
-      mimeType: file.mimeType,
-      url, // Store R2 key (r2://) for regenerating signed URLs
-    });
+    let audioUpload;
+    try {
+      console.log(`Creating audio record for episode ${episodeId}`);
+      audioUpload = await this.audioRepo.create({
+        id: audioId,
+        episodeId,
+        fileName: file.fileName,
+        fileSize: file.fileSize,
+        mimeType: file.mimeType,
+        url, // Store R2 key (r2://) for regenerating signed URLs
+      });
+      console.log(`Audio record created successfully: ${audioUpload.id}`);
+    } catch (error) {
+      console.error("Failed to create audio record:", error);
+      throw new Error(
+        `Database error: Failed to create audio record - ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
 
     // Update episode with R2 key (NOT signed URL)
-    await this.episodeRepo.update(showId, episodeId, {
-      audioUrl: url, // Store R2 key, sign on-demand when reading
-    });
+    try {
+      console.log(`Updating episode ${episodeId} with audio URL`);
+      await this.episodeRepo.update(showId, episodeId, {
+        audioUrl: url, // Store R2 key, sign on-demand when reading
+      });
+      console.log(`Episode updated successfully`);
+    } catch (error) {
+      console.error("Failed to update episode:", error);
+      throw new Error(
+        `Database error: Failed to update episode - ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
 
     // Publish event with R2 key (generate signed URL for event payload)
-    await this.eventPublisher.publish(
-      "audio.uploaded",
-      {
-        ...audioUpload,
-        url: signedUrl, // Include signed URL in event for immediate use
-      },
-      audioUpload.id
-    );
+    try {
+      console.log(`Publishing audio.uploaded event`);
+      await this.eventPublisher.publish(
+        "audio.uploaded",
+        {
+          ...audioUpload,
+          url: signedUrl, // Include signed URL in event for immediate use
+        },
+        audioUpload.id
+      );
+      console.log(`Event published successfully`);
+    } catch (error) {
+      console.error("Failed to publish event:", error);
+      throw new Error(
+        `Event error: Failed to publish audio.uploaded event - ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
 
     // Process uploaded audio with workflow or fallback to tasks
-    await this.processUploadedAudio(episodeId, showId, audioId, url); // Pass R2 key instead of signed URL
+    try {
+      console.log(`Starting audio processing workflow`);
+      await this.processUploadedAudio(episodeId, showId, audioId, url); // Pass R2 key instead of signed URL
+      console.log(`Audio processing workflow started successfully`);
+    } catch (error) {
+      console.error("Failed to start audio processing:", error);
+      throw new Error(
+        `Workflow error: Failed to start audio processing - ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`
+      );
+    }
 
     // Return upload info with signed URL for immediate use
     return {
@@ -139,38 +190,42 @@ export class AudioService {
     };
   }
 
-  // Process uploaded audio with workflow-only approach
+  // Process uploaded audio by creating a task that will start the workflow
   private async processUploadedAudio(
     episodeId: string,
     showId: string,
     audioId: string,
     audioR2Key: string // Changed parameter name to be clearer
   ): Promise<void> {
-    if (!this.audioProcessingWorkflow) {
-      throw new Error(
-        "Audio processing workflow not available - workflow processing required"
-      );
-    }
-
     console.log(
-      `Starting audio processing workflow for uploaded audio: episodeId=${episodeId}`
+      `Creating audio processing task for uploaded audio: episodeId=${episodeId}`
     );
 
     try {
-      // Start the audio processing workflow
-      const workflowInstance = await this.audioProcessingWorkflow.create({
-        params: {
-          episodeId,
-          audioR2Key, // Use R2 key instead of signed URL
-          chunkDuration: 30,
-          overlapDuration: 2,
-          encodingFormats: ["mp3_128"], // Use MP3 format with auto-adjusted bitrate based on mono/stereo
-          transcriptionLanguage: "en", // Default to English to prevent mixed language issues
-        },
+      // Import TaskService dynamically to avoid circular dependencies
+      const { TaskService } = await import("../tasks/service.js");
+
+      // Create a TaskService instance with workflow support
+      console.log(
+        `Creating TaskService with workflow: ${!!this.audioProcessingWorkflow}`
+      );
+      const taskService = new TaskService(
+        this.database,
+        this.audioProcessingWorkflow
+      );
+
+      // Create an audio_processing task with the required payload
+      const task = await taskService.createTask("audio_processing", {
+        episodeId,
+        audioR2Key, // Use R2 key instead of signed URL
+        chunkDuration: 30,
+        overlapDuration: 2,
+        encodingFormats: ["mp3_128"], // Use MP3 format with auto-adjusted bitrate based on mono/stereo
+        transcriptionLanguage: "en", // Default to English to prevent mixed language issues
       });
 
       console.log(
-        `Started audio processing workflow ${workflowInstance.id} for episode ${episodeId}`
+        `Created audio processing task ${task.id} for episode ${episodeId}`
       );
 
       // Generate signed URL for event payload (events may need accessible URLs)
@@ -191,26 +246,28 @@ export class AudioService {
         }
       }
 
-      // Publish workflow started event
+      // Publish task created event (reusing existing workflow event type)
+      console.log(`Publishing workflow started event for episode ${episodeId}`);
       await this.eventPublisher.publish(
         "episode.audio_processing_workflow_started",
         {
           episodeId,
-          workflowId: workflowInstance.id,
+          taskId: task.id,
           audioUrl: eventSignedUrl,
           audioR2Key, // Include R2 key for workflow consumers
-          type: "workflow",
+          type: "task",
+          message: "Audio processing task created and workflow started",
         },
         episodeId
       );
+      console.log(`Workflow started event published successfully`);
     } catch (error) {
       console.error(
-        `Failed to start audio processing workflow for episode ${episodeId}:`,
+        `Failed to create audio processing task for episode ${episodeId}:`,
         error
       );
-      // Re-throw the error since we're workflow-only now
       throw new Error(
-        `Workflow startup failed: ${
+        `Task creation failed: ${
           error instanceof Error ? error.message : "Unknown error"
         }`
       );
@@ -295,5 +352,48 @@ export class AudioService {
       console.warn("Failed to generate presigned URL for key:", r2Key, error);
       return null;
     }
+  }
+
+  /**
+   * Creates an audio processing task that will start a workflow
+   * This is the new recommended way to process audio
+   */
+  async createAudioProcessingTask(
+    episodeId: string,
+    audioR2Key: string,
+    options?: {
+      chunkDuration?: number;
+      overlapDuration?: number;
+      encodingFormats?: string[];
+      transcriptionLanguage?: string;
+    }
+  ) {
+    // Import TaskService to create the task
+    const { TaskService } = await import("../tasks/service.js");
+
+    // Create a temporary TaskService instance with workflow support
+    // In a real implementation, this should be injected as a dependency
+    const taskService = new TaskService(
+      this.database,
+      this.audioProcessingWorkflow
+    );
+
+    const payload = {
+      episodeId,
+      audioR2Key,
+      chunkDuration: options?.chunkDuration || 30,
+      overlapDuration: options?.overlapDuration || 2,
+      encodingFormats: options?.encodingFormats || ["mp3_128"],
+      transcriptionLanguage: options?.transcriptionLanguage || "en",
+    };
+
+    // Create an audio_processing task
+    const task = await taskService.createTask("audio_processing", payload);
+
+    console.log(
+      `Created audio processing task ${task.id} for episode ${episodeId}`
+    );
+
+    return task;
   }
 }

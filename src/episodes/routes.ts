@@ -245,40 +245,6 @@ const publishEpisodeRoute = createRoute({
   security: [{ Bearer: [] }],
 });
 
-// Request transcription for episode
-const transcribeEpisodeRoute = createRoute({
-  method: "post",
-  path: "/shows/{show_id}/episodes/{episode_id}/transcribe",
-  tags: ["episodes"],
-  summary: "Request episode transcription",
-  description:
-    "Request AI transcription for an episode's audio using Cloudflare Workers AI",
-  request: {
-    params: EpisodeParamsSchema,
-  },
-  responses: {
-    200: {
-      description: "Transcription task created successfully",
-      content: {
-        "application/json": {
-          schema: z.object({
-            taskId: z.number(),
-            status: z.string(),
-            message: z.string(),
-          }),
-        },
-      },
-    },
-    400: {
-      description: "Bad request - episode has no audio",
-    },
-    404: {
-      description: "Episode not found",
-    },
-  },
-  security: [{ Bearer: [] }],
-});
-
 // Delete episode
 const deleteEpisodeRoute = createRoute({
   method: "delete",
@@ -597,64 +563,6 @@ export function registerEpisodeRoutes(
           instance: c.req.path,
         };
         throw new HTTPException(404, { message: JSON.stringify(problem) });
-      }
-      throw error;
-    }
-  });
-
-  // Request transcription for episode
-  app.openapi(transcribeEpisodeRoute, async (c) => {
-    const payload = c.get("jwtPayload") as JWTPayload;
-    const hasWritePermission = hasPermissions(payload, ["podcast:write"]);
-    const hasWriteScope = hasScopes(payload, ["podcast.write"]);
-    if (!hasWritePermission && !hasWriteScope) {
-      const problem = {
-        type: "forbidden",
-        title: "Forbidden",
-        status: 403,
-        detail: "Required permissions: podcast:write or scope: podcast.write",
-        instance: c.req.path,
-      };
-      throw new HTTPException(403, { message: JSON.stringify(problem) });
-    }
-
-    const { show_id, episode_id } = c.req.valid("param");
-
-    try {
-      const task = await episodeService.createTranscriptionTask(
-        show_id,
-        episode_id
-      );
-
-      return c.json({
-        taskId: task.id,
-        status: task.status,
-        message: "Transcription task created successfully",
-      });
-    } catch (error) {
-      if (error instanceof NotFoundError) {
-        const problem = {
-          type: "not_found",
-          title: "Not Found",
-          status: 404,
-          detail: "Episode not found",
-          instance: c.req.path,
-        };
-        throw new HTTPException(404, { message: JSON.stringify(problem) });
-      }
-      if (
-        error instanceof Error &&
-        error.message === "Episode has no audio URL"
-      ) {
-        const problem = {
-          type: "bad_request",
-          title: "Bad Request",
-          status: 400,
-          detail:
-            "Episode must have an audio URL before transcription can be requested",
-          instance: c.req.path,
-        };
-        throw new HTTPException(400, { message: JSON.stringify(problem) });
       }
       throw error;
     }

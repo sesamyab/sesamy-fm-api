@@ -1,0 +1,1 @@
+ALTER TABLE `creatives` ADD `type` text DEFAULT 'audio' NOT NULL;

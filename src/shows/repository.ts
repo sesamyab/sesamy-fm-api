@@ -12,12 +12,18 @@ export class ShowRepository {
   }
 
   async findAll({ limit, offset }: Pagination) {
-    return await this.db
+    const results = await this.db
       .select()
       .from(shows)
       .limit(limit)
       .offset(offset)
       .orderBy(shows.createdAt);
+
+    // Parse categories JSON for each show
+    return results.map((show) => ({
+      ...show,
+      categories: show.categories ? JSON.parse(show.categories) : null,
+    }));
   }
 
   async findById(id: string) {
@@ -27,7 +33,14 @@ export class ShowRepository {
       .where(eq(shows.id, id))
       .limit(1);
 
-    return result[0] || null;
+    const show = result[0] || null;
+    if (!show) return null;
+
+    // Parse categories JSON
+    return {
+      ...show,
+      categories: show.categories ? JSON.parse(show.categories) : null,
+    };
   }
 
   async create(data: CreateShow & { id: string }) {
@@ -35,12 +48,18 @@ export class ShowRepository {
 
     const newShow = {
       ...data,
+      categories: data.categories ? JSON.stringify(data.categories) : null,
       createdAt: now,
       updatedAt: now,
     };
 
     await this.db.insert(shows).values(newShow);
-    return newShow;
+
+    // Return with parsed categories
+    return {
+      ...newShow,
+      categories: data.categories || null,
+    };
   }
 
   async update(id: string, data: UpdateShow) {
@@ -49,19 +68,23 @@ export class ShowRepository {
       throw new NotFoundError("Show not found");
     }
 
+    const updatedAt = new Date().toISOString();
+
+    // Handle categories serialization
+    const updateData = {
+      ...data,
+      categories: data.categories ? JSON.stringify(data.categories) : undefined,
+      updatedAt,
+    };
+
+    await this.db.update(shows).set(updateData).where(eq(shows.id, id));
+
+    // Return with parsed categories
     const updatedShow = {
       ...existing,
       ...data,
-      updatedAt: new Date().toISOString(),
+      updatedAt,
     };
-
-    await this.db
-      .update(shows)
-      .set({
-        ...data,
-        updatedAt: updatedShow.updatedAt,
-      })
-      .where(eq(shows.id, id));
 
     return updatedShow;
   }

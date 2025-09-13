@@ -9,6 +9,7 @@ import { createApp } from "./app";
 import { TaskProcessor } from "./tasks/processor";
 import { EncodingContainer } from "./encoding/container";
 import { AudioProcessingWorkflow } from "./workflows/audio-processing";
+import { ImportShowWorkflow } from "./workflows/import-show";
 
 // Interface for Cloudflare Worker environment
 interface CloudflareEnv {
@@ -23,6 +24,7 @@ interface CloudflareEnv {
   TASK_QUEUE?: Queue;
   ENCODING_CONTAINER: DurableObjectNamespace;
   AUDIO_PROCESSING_WORKFLOW?: Workflow;
+  IMPORT_SHOW_WORKFLOW?: Workflow;
 }
 
 export default {
@@ -41,7 +43,8 @@ export default {
       env.AI,
       env.TASK_QUEUE,
       env.ENCODING_CONTAINER,
-      env.AUDIO_PROCESSING_WORKFLOW
+      env.AUDIO_PROCESSING_WORKFLOW,
+      env.IMPORT_SHOW_WORKFLOW
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;
@@ -57,16 +60,7 @@ export default {
     ctx: ExecutionContext
   ): Promise<void> {
     // Process background tasks
-    const taskProcessor = new TaskProcessor(
-      env.DB,
-      env.BUCKET,
-      env.AI,
-      env.TASK_QUEUE,
-      env.ENCODING_CONTAINER,
-      env.R2_ACCESS_KEY_ID,
-      env.R2_SECRET_ACCESS_KEY,
-      env.R2_ENDPOINT
-    );
+    const taskProcessor = new TaskProcessor(env.DB);
     await taskProcessor.handleScheduledTask(event);
   },
   async queue(
@@ -75,16 +69,7 @@ export default {
     ctx: ExecutionContext
   ) {
     // Process messages from TASK_QUEUE
-    const taskProcessor = new TaskProcessor(
-      env.DB,
-      env.BUCKET,
-      env.AI,
-      env.TASK_QUEUE,
-      env.ENCODING_CONTAINER,
-      env.R2_ACCESS_KEY_ID,
-      env.R2_SECRET_ACCESS_KEY,
-      env.R2_ENDPOINT
-    );
+    const taskProcessor = new TaskProcessor(env.DB);
     for (const msg of batch.messages) {
       try {
         const { type, taskId, payload } = msg.body;
@@ -103,5 +88,5 @@ export default {
   },
 };
 
-// Export the EncodingContainer and AudioProcessingWorkflow for Cloudflare Workers
-export { EncodingContainer, AudioProcessingWorkflow };
+// Export the EncodingContainer, AudioProcessingWorkflow, and ImportShowWorkflow for Cloudflare Workers
+export { EncodingContainer, AudioProcessingWorkflow, ImportShowWorkflow };

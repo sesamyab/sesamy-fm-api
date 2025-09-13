@@ -1,0 +1,1 @@
+ALTER TABLE `creatives` ADD `name` text NOT NULL DEFAULT 'Untitled Creative';

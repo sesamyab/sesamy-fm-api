@@ -15,8 +15,14 @@ export type PodcastEventType =
   | "episode.updated"
   | "episode.deleted"
   | "episode.published"
-  | "episode.transcription_requested"
-  | "episode.transcription_completed"
   | "episode.audio_processing_workflow_started"
   | "episode.encoding_completed"
-  | "audio.uploaded";
+  | "audio.uploaded"
+  | "campaign.created"
+  | "campaign.updated"
+  | "campaign.deleted"
+  | "campaign.show.added"
+  | "campaign.show.removed"
+  | "creative.created"
+  | "creative.updated"
+  | "creative.deleted";

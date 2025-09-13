@@ -11,6 +11,10 @@ const { serve } = require("@hono/node-server");
 
 const PORT = process.env.PORT || 8080;
 
+// Track active encoding jobs
+let activeJobs = new Set();
+let jobCounter = 0;
+
 // Create Hono app
 const app = new Hono();
 
@@ -43,6 +47,8 @@ app.get("/health", (c) => {
     timestamp: new Date().toISOString(),
     instanceId: process.env.CLOUDFLARE_DEPLOYMENT_ID || "local",
     ffmpegVersion: "available",
+    activeJobs: activeJobs.size,
+    jobsInProgress: Array.from(activeJobs),
   });
 });
 
@@ -94,8 +100,44 @@ app.post("/metadata", async (c) => {
   }
 });
 
+// Track active connections for disconnection detection
+const activeConnections = new Map();
+
 // Encode endpoint
 app.post("/encode", async (c) => {
+  // Check if there's already an encoding job running
+  if (activeJobs.size > 0) {
+    console.log(
+      `[RATE_LIMIT] Rejecting encode request - ${activeJobs.size} jobs already active`
+    );
+    c.header("Retry-After", "10");
+    c.header("X-RateLimit-Limit", "1");
+    c.header("X-RateLimit-Remaining", "0");
+    return c.json(
+      {
+        success: false,
+        error: "Encoding service is busy. Please retry in 10 seconds.",
+        retryAfter: 10,
+        activeJobs: activeJobs.size,
+      },
+      429
+    );
+  }
+
+  const jobId = ++jobCounter;
+  activeJobs.add(jobId);
+  console.log(
+    `[JOB_START] Started encoding job ${jobId}. Active jobs: ${activeJobs.size}`
+  );
+
+  // Track connection status for client disconnection detection
+  const connectionInfo = {
+    connected: true,
+    aborted: false,
+    controller: new AbortController(),
+  };
+  activeConnections.set(jobId, connectionInfo);
+
   try {
     const {
       audioUrl,
@@ -103,6 +145,9 @@ app.post("/encode", async (c) => {
       outputFormat = "mp3",
       bitrate = 128,
       streaming = false,
+      progressCallbackUrl,
+      taskId,
+      step,
     } = await c.req.json();
 
     if (!audioUrl) {
@@ -129,25 +174,104 @@ app.post("/encode", async (c) => {
       `Encoding with direct upload: ${audioUrl} -> ${outputFormat} at ${bitrate}kbps`
     );
 
+    // Set up progress callback if URL provided
+    let progressCallback = null;
+    if (progressCallbackUrl) {
+      progressCallback = async (progress) => {
+        // Check if client is still connected
+        if (!connectionInfo.connected || connectionInfo.aborted) {
+          console.log(
+            `[JOB_${jobId}] Client disconnected, skipping progress update`
+          );
+          return false; // Signal to abort encoding
+        }
+
+        try {
+          await fetch(progressCallbackUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jobId,
+              progress,
+              timestamp: new Date().toISOString(),
+              taskId: taskId,
+              step: step,
+            }),
+            signal: AbortSignal.timeout(5000), // 5 second timeout
+          });
+        } catch (error) {
+          console.error(`[JOB_${jobId}] Progress callback failed:`, error);
+        }
+      };
+    }
+
     if (streaming) {
       // Set headers for Server-Sent Events (SSE)
       c.header("Content-Type", "text/event-stream");
       c.header("Cache-Control", "no-cache");
       c.header("Connection", "keep-alive");
 
-      // For SSE, we need to use a different approach with Hono
-      // This is a simplified version - full SSE would need custom handling
-      const result = await encodeAndUpload(
+      // For streaming, we need to return a Response with a ReadableStream
+      const { readable, writable } = new TransformStream();
+      const writer = writable.getWriter();
+
+      // Start encoding in the background
+      encodeAndUpload(
         audioUrl,
         uploadUrl,
         outputFormat,
         bitrate,
-        null // No progress callback for now in Hono version
-      );
+        async (progress) => {
+          // Check connection before sending progress
+          if (!connectionInfo.connected || connectionInfo.aborted) {
+            console.log(
+              `[JOB_${jobId}] Client disconnected during streaming, aborting`
+            );
+            return false;
+          }
 
-      return c.json({
-        success: true,
-        ...result,
+          try {
+            await writer.write(`data: ${JSON.stringify({ progress })}\n\n`);
+            // Also call the external progress callback if provided
+            if (progressCallback) {
+              await progressCallback(progress);
+            }
+          } catch (error) {
+            console.log(
+              `[JOB_${jobId}] Stream write failed, client likely disconnected`
+            );
+            connectionInfo.connected = false;
+            return false;
+          }
+        },
+        connectionInfo // Pass connection info for disconnection detection
+      )
+        .then(async (result) => {
+          if (connectionInfo.connected) {
+            await writer.write(
+              `data: ${JSON.stringify({ success: true, ...result })}\n\n`
+            );
+          }
+          await writer.close();
+        })
+        .catch(async (error) => {
+          if (connectionInfo.connected) {
+            await writer.write(
+              `data: ${JSON.stringify({
+                success: false,
+                error: error.message,
+              })}\n\n`
+            );
+          }
+          await writer.close();
+        });
+
+      return new Response(readable, {
+        headers: {
+          "Content-Type": "text/event-stream",
+          "Cache-Control": "no-cache",
+          Connection: "keep-alive",
+        },
       });
     } else {
       const result = await encodeAndUpload(
@@ -155,7 +279,8 @@ app.post("/encode", async (c) => {
         uploadUrl,
         outputFormat,
         bitrate,
-        null
+        progressCallback,
+        connectionInfo
       );
 
       return c.json({
@@ -165,6 +290,21 @@ app.post("/encode", async (c) => {
     }
   } catch (error) {
     console.error("Encoding error:", error);
+
+    // Check if this was due to client disconnection
+    if (!connectionInfo.connected || connectionInfo.aborted) {
+      console.log(
+        `[JOB_${jobId}] Encoding aborted due to client disconnection`
+      );
+      return c.json(
+        {
+          success: false,
+          error: "Client disconnected during encoding",
+        },
+        499 // Client Closed Request
+      );
+    }
+
     return c.json(
       {
         success: false,
@@ -172,11 +312,51 @@ app.post("/encode", async (c) => {
       },
       500
     );
+  } finally {
+    // Clean up the job from active jobs tracking
+    activeJobs.delete(jobId);
+    activeConnections.delete(jobId);
+    console.log(
+      `[JOB_END] Completed encoding job ${jobId}. Active jobs: ${activeJobs.size}`
+    );
   }
 });
 
 // Chunk endpoint
 app.post("/chunk", async (c) => {
+  // Check if there's already an encoding job running
+  if (activeJobs.size > 0) {
+    console.log(
+      `[RATE_LIMIT] Rejecting chunk request - ${activeJobs.size} jobs already active`
+    );
+    c.header("Retry-After", "10");
+    c.header("X-RateLimit-Limit", "1");
+    c.header("X-RateLimit-Remaining", "0");
+    return c.json(
+      {
+        success: false,
+        error: "Encoding service is busy. Please retry in 10 seconds.",
+        retryAfter: 10,
+        activeJobs: activeJobs.size,
+      },
+      429
+    );
+  }
+
+  const jobId = ++jobCounter;
+  activeJobs.add(jobId);
+  console.log(
+    `[JOB_START] Started chunking job ${jobId}. Active jobs: ${activeJobs.size}`
+  );
+
+  // Track connection status for client disconnection detection
+  const connectionInfo = {
+    connected: true,
+    aborted: false,
+    controller: new AbortController(),
+  };
+  activeConnections.set(jobId, connectionInfo);
+
   try {
     const {
       audioUrl,
@@ -186,6 +366,9 @@ app.post("/chunk", async (c) => {
       chunkDuration = 30,
       overlapDuration = 2,
       streaming = false,
+      progressCallbackUrl,
+      taskId,
+      step,
       duration, // Required: Pre-determined duration to avoid ffprobe call
     } = await c.req.json();
 
@@ -223,6 +406,38 @@ app.post("/chunk", async (c) => {
       `Chunking audio with pre-signed URLs: ${audioUrl} -> ${chunkUploadUrls.length} chunks`
     );
 
+    // Set up progress callback if URL provided
+    let progressCallback = null;
+    if (progressCallbackUrl) {
+      progressCallback = async (progress, chunkIndex) => {
+        // Check if client is still connected
+        if (!connectionInfo.connected || connectionInfo.aborted) {
+          console.log(
+            `[JOB_${jobId}] Client disconnected, skipping progress update`
+          );
+          return false; // Signal to abort chunking
+        }
+
+        try {
+          await fetch(progressCallbackUrl, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              jobId,
+              progress,
+              chunkIndex,
+              timestamp: new Date().toISOString(),
+              taskId: taskId,
+              step: step,
+            }),
+            signal: AbortSignal.timeout(5000), // 5 second timeout
+          });
+        } catch (error) {
+          console.error(`[JOB_${jobId}] Progress callback failed:`, error);
+        }
+      };
+    }
+
     if (streaming) {
       // Simplified for Hono - full SSE would need custom handling
       const result = await chunkAudioWithPresignedUrls(
@@ -232,8 +447,9 @@ app.post("/chunk", async (c) => {
         bitrate,
         chunkDuration,
         overlapDuration,
-        null,
-        duration
+        progressCallback,
+        duration,
+        connectionInfo
       );
 
       return c.json({
@@ -248,8 +464,9 @@ app.post("/chunk", async (c) => {
         bitrate,
         chunkDuration,
         overlapDuration,
-        null,
-        duration
+        progressCallback,
+        duration,
+        connectionInfo
       );
 
       return c.json({
@@ -265,6 +482,13 @@ app.post("/chunk", async (c) => {
         error: error.message,
       },
       500
+    );
+  } finally {
+    // Clean up the job from active jobs tracking
+    activeJobs.delete(jobId);
+    activeConnections.delete(jobId);
+    console.log(
+      `[JOB_END] Completed chunking job ${jobId}. Active jobs: ${activeJobs.size}`
     );
   }
 });
@@ -403,7 +627,8 @@ function encodeAndUpload(
   uploadUrl,
   outputFormat = "mp3",
   bitrate = 128,
-  progressCallback
+  progressCallback,
+  connectionInfo = null
 ) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -485,10 +710,33 @@ function encodeAndUpload(
 
       // Add progress tracking if callback provided
       if (progressCallback && audioProps.duration) {
-        command = command.on("progress", (progress) => {
+        command = command.on("progress", async (progress) => {
           if (progress.percent && progress.percent > 0) {
             const progressValue = Math.min(Math.round(progress.percent), 99);
-            progressCallback(progressValue);
+
+            // Call progress callback and check if encoding should continue
+            const shouldContinue = await progressCallback(progressValue);
+
+            // If callback returns false, abort the encoding
+            if (shouldContinue === false) {
+              console.log("Encoding aborted due to client disconnection");
+              command.kill("SIGTERM"); // Gracefully kill ffmpeg
+              if (connectionInfo) {
+                connectionInfo.aborted = true;
+              }
+              return;
+            }
+
+            // Also check connection info if provided
+            if (
+              connectionInfo &&
+              (!connectionInfo.connected || connectionInfo.aborted)
+            ) {
+              console.log("Encoding aborted - connection lost");
+              command.kill("SIGTERM");
+              connectionInfo.aborted = true;
+              return;
+            }
           }
         });
       }
@@ -509,6 +757,21 @@ function encodeAndUpload(
         .save(tempOutputFile)
         .on("end", async () => {
           clearInterval(keepAliveInterval); // Stop keep-alive when done
+
+          // Check if encoding was aborted due to client disconnection
+          if (connectionInfo && connectionInfo.aborted) {
+            console.log(
+              "Encoding completed but client already disconnected, skipping upload"
+            );
+            try {
+              await fs.unlink(tempOutputFile);
+            } catch (unlinkError) {
+              // Ignore unlink errors
+            }
+            reject(new Error("Client disconnected during encoding"));
+            return;
+          }
+
           try {
             const stats = await fs.stat(tempOutputFile);
             const encodedData = await fs.readFile(tempOutputFile);
@@ -598,7 +861,8 @@ function chunkAudioWithPresignedUrls(
   chunkDuration = 30,
   overlapDuration = 2,
   progressCallback,
-  duration // Required: Pre-determined duration
+  duration, // Required: Pre-determined duration
+  connectionInfo = null
 ) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -635,6 +899,16 @@ function chunkAudioWithPresignedUrls(
       const processedChunks = [];
 
       const processChunk = async (chunk) => {
+        // Check if client is still connected before processing chunk
+        if (
+          connectionInfo &&
+          (!connectionInfo.connected || connectionInfo.aborted)
+        ) {
+          throw new Error(
+            `Client disconnected before processing chunk ${chunk.index}`
+          );
+        }
+
         console.log(
           `Processing chunk ${chunk.index}: ${chunk.startTime}s - ${chunk.endTime}s`
         );
@@ -712,7 +986,17 @@ function chunkAudioWithPresignedUrls(
                   const overallProgress = Math.round(
                     ((chunk.index + 1) / chunks.length) * 100
                   );
-                  progressCallback(overallProgress);
+                  const shouldContinue = await progressCallback(
+                    overallProgress,
+                    chunk.index
+                  );
+
+                  // Check if the client wants us to stop
+                  if (shouldContinue === false) {
+                    throw new Error(
+                      `Chunking aborted at chunk ${chunk.index} due to client disconnection`
+                    );
+                  }
                 }
               } catch (error) {
                 // Clean up temp file on error

@@ -10,6 +10,14 @@ export const CreateEpisodeSchema = z.object({
   imageUrl: z.nullable(z.string().url()).optional(),
   audioUrl: z.nullable(z.string().url()).optional(),
   transcriptUrl: z.nullable(z.string().url()).optional(),
+  duration: z.number().int().positive().nullable().optional(),
+  episodeNumber: z.number().int().nonnegative().nullable().optional(),
+  seasonNumber: z.number().int().nonnegative().nullable().optional(),
+  episodeType: z.string().nullable().optional(),
+  author: z.string().nullable().optional(),
+  subtitle: z.string().nullable().optional(),
+  explicit: z.boolean().nullable().optional(),
+  keywords: z.string().nullable().optional(), // JSON string containing array of keywords
 });
 
 export const UpdateEpisodeSchema = z.object({
@@ -19,6 +27,14 @@ export const UpdateEpisodeSchema = z.object({
   audioUrl: z.nullable(z.string().url()).optional(),
   transcriptUrl: z.nullable(z.string().url()).optional(),
   encodedAudioUrls: z.nullable(z.string()).optional(),
+  duration: z.number().int().positive().nullable().optional(),
+  episodeNumber: z.number().int().nonnegative().nullable().optional(),
+  seasonNumber: z.number().int().nonnegative().nullable().optional(),
+  episodeType: z.string().nullable().optional(),
+  author: z.string().nullable().optional(),
+  subtitle: z.string().nullable().optional(),
+  explicit: z.boolean().nullable().optional(),
+  keywords: z.string().nullable().optional(), // JSON string containing array of keywords
 });
 
 // Response schemas
@@ -33,6 +49,14 @@ export const EpisodeSchema = z.object({
   encodedAudioUrls: z.string().nullable(),
   published: z.boolean().nullable(),
   publishedAt: z.string().datetime().nullable(),
+  duration: z.number().int().positive().nullable(),
+  episodeNumber: z.number().int().nonnegative().nullable(),
+  seasonNumber: z.number().int().nonnegative().nullable(),
+  episodeType: z.string().nullable(),
+  author: z.string().nullable(),
+  subtitle: z.string().nullable(),
+  explicit: z.boolean().nullable(),
+  keywords: z.string().nullable(), // JSON string containing array of keywords
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });

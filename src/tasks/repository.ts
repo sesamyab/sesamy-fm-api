@@ -212,4 +212,22 @@ export class TaskRepository {
 
     return result[0] || null;
   }
+
+  async update(
+    id: number,
+    updates: Partial<Omit<NewTask, "id" | "createdAt">>
+  ): Promise<Task | null> {
+    const now = new Date().toISOString();
+
+    const result = await this.db
+      .update(tasks)
+      .set({
+        ...updates,
+        updatedAt: now,
+      })
+      .where(eq(tasks.id, id))
+      .returning();
+
+    return result[0] || null;
+  }
 }

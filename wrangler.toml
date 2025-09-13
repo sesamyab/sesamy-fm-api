@@ -54,6 +54,11 @@ name = "audio-processing-workflow"
 binding = "AUDIO_PROCESSING_WORKFLOW"
 class_name = "AudioProcessingWorkflow"
 
+[[workflows]]
+name = "import-show-workflow"
+binding = "IMPORT_SHOW_WORKFLOW" 
+class_name = "ImportShowWorkflow"
+
 # Durable Objects bindings
 [[durable_objects.bindings]]
 class_name = "EncodingContainer"

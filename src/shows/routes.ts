@@ -8,6 +8,10 @@ import {
   PaginationSchema,
   ShowParamsSchema,
   ImageUploadSchema,
+  ImportShowFromRSSSchema,
+  ImportShowResponseSchema,
+  RSSPreviewRequestSchema,
+  RSSPreviewResponseSchema,
 } from "./schemas";
 import { ShowService } from "./service";
 import { AudioService } from "../audio/service";
@@ -15,6 +19,12 @@ import { ImageService } from "../images/service";
 import { requireScopes, hasPermissions, hasScopes } from "../auth/middleware";
 import { NotFoundError } from "../common/errors";
 import { JWTPayload } from "../auth/types";
+import { TaskService } from "../tasks/service";
+import {
+  fetchAndParseRSS,
+  RSSParseError,
+  RSSValidationError,
+} from "../workflows/import-show/rss-parser";
 
 // Utility function to sign imageUrl in show data
 async function signImageUrlInShow(show: any, audioService?: AudioService) {
@@ -120,6 +130,78 @@ const createShowRoute = createRoute({
   security: [{ Bearer: [] }],
 });
 
+// Import show from RSS route
+const importShowFromRSSRoute = createRoute({
+  method: "post",
+  path: "/shows/import",
+  tags: ["shows"],
+  summary: "Import show from RSS",
+  description: "Import a podcast show and its episodes from an RSS feed URL",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: ImportShowFromRSSSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    202: {
+      content: {
+        "application/json": {
+          schema: ImportShowResponseSchema,
+        },
+      },
+      description: "Import task created successfully",
+    },
+    400: {
+      description: "Invalid RSS URL or parsing error",
+    },
+    500: {
+      description: "Internal server error",
+    },
+  },
+  security: [{ Bearer: [] }],
+});
+
+// RSS preview route
+const rssPreviewRoute = createRoute({
+  method: "post",
+  path: "/shows/preview-rss",
+  tags: ["shows"],
+  summary: "Preview RSS feed",
+  description:
+    "Parse and preview an RSS feed without importing it. Returns the parsed show and episode data in JSON format with any validation errors.",
+  request: {
+    body: {
+      content: {
+        "application/json": {
+          schema: RSSPreviewRequestSchema,
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      content: {
+        "application/json": {
+          schema: RSSPreviewResponseSchema,
+        },
+      },
+      description:
+        "RSS feed parsed successfully (may include validation errors)",
+    },
+    400: {
+      description: "Invalid request or RSS URL format",
+    },
+    500: {
+      description: "Internal server error",
+    },
+  },
+  security: [{ Bearer: [] }],
+});
+
 // Update show route
 const updateShowRoute = createRoute({
   method: "patch",
@@ -220,7 +302,9 @@ export function registerShowRoutes(
   app: OpenAPIHono,
   showService: ShowService,
   audioService?: AudioService,
-  imageService?: ImageService
+  imageService?: ImageService,
+  database?: D1Database,
+  importShowWorkflow?: Workflow
 ) {
   // Get all shows
   app.openapi(getShowsRoute, async (c) => {
@@ -315,6 +399,209 @@ export function registerShowRoutes(
     const signedShow = await signImageUrlInShow(show, audioService);
 
     return c.json(signedShow, 201);
+  });
+
+  // Import show from RSS
+  app.openapi(importShowFromRSSRoute, async (c) => {
+    // Check auth
+    const payload = c.get("jwtPayload") as JWTPayload;
+    const hasWritePermission = hasPermissions(payload, ["podcast:write"]);
+    const hasWriteScope = hasScopes(payload, ["podcast.write"]);
+    if (!hasWritePermission && !hasWriteScope) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Required permissions: podcast:write or scope: podcast.write",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
+    const importData = c.req.valid("json");
+
+    try {
+      // First validate the RSS feed by attempting to parse it
+      console.log(`Validating RSS feed: ${importData.rssUrl}`);
+
+      // Test fetch and parse the RSS to validate it immediately
+      await fetchAndParseRSS(importData.rssUrl);
+
+      // If validation succeeds, create the task and workflow
+      if (!database) {
+        const problem = {
+          type: "internal_error",
+          title: "Internal Server Error",
+          status: 500,
+          detail: "Database not available",
+          instance: c.req.path,
+        };
+        throw new HTTPException(500, { message: JSON.stringify(problem) });
+      }
+
+      if (!importShowWorkflow) {
+        const problem = {
+          type: "internal_error",
+          title: "Internal Server Error",
+          status: 500,
+          detail: "Import workflow not available",
+          instance: c.req.path,
+        };
+        throw new HTTPException(500, { message: JSON.stringify(problem) });
+      }
+
+      const taskService = new TaskService(
+        database,
+        undefined,
+        importShowWorkflow
+      );
+
+      // Create import task
+      const task = await taskService.createTask("import_show" as any, {
+        rssUrl: importData.rssUrl,
+        maxEpisodes: importData.maxEpisodes || 100,
+        skipExistingEpisodes: importData.skipExistingEpisodes || false,
+      });
+
+      console.log(
+        `Created import task ${task.id} for RSS: ${importData.rssUrl}`
+      );
+
+      return c.json(
+        {
+          taskId: task.id.toString(),
+          workflowId: task.workflowId || "pending",
+          message: `RSS import task created successfully. Task ID: ${task.id}`,
+        },
+        202
+      );
+    } catch (error) {
+      console.error("Import show from RSS failed:", error);
+
+      if (error instanceof RSSParseError) {
+        const problem = {
+          type: "validation_error",
+          title: "RSS Validation Error",
+          status: 400,
+          detail: `RSS parsing failed: ${error.message}`,
+          instance: c.req.path,
+        };
+        throw new HTTPException(400, { message: JSON.stringify(problem) });
+      }
+
+      if (error instanceof RSSValidationError) {
+        const problem = {
+          type: "validation_error",
+          title: "RSS Validation Error",
+          status: 400,
+          detail: `RSS validation failed: ${
+            error.message
+          }. Errors: ${error.validationErrors
+            .map((e) => e.message)
+            .join(", ")}`,
+          instance: c.req.path,
+        };
+        throw new HTTPException(400, { message: JSON.stringify(problem) });
+      }
+
+      if (error instanceof HTTPException) {
+        throw error;
+      }
+
+      const problem = {
+        type: "internal_error",
+        title: "Internal Server Error",
+        status: 500,
+        detail: `Failed to create import task: ${
+          error instanceof Error ? error.message : "Unknown error"
+        }`,
+        instance: c.req.path,
+      };
+      throw new HTTPException(500, { message: JSON.stringify(problem) });
+    }
+  });
+
+  // RSS preview
+  app.openapi(rssPreviewRoute, async (c) => {
+    // Check auth
+    const payload = c.get("jwtPayload") as JWTPayload;
+    const hasReadPermission = hasPermissions(payload, ["podcast:read"]);
+    const hasReadScope = hasScopes(payload, ["podcast.read"]);
+    if (!hasReadPermission && !hasReadScope) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Required permissions: podcast:read or scope: podcast.read",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
+    const { rssUrl } = c.req.valid("json");
+
+    try {
+      console.log(`Previewing RSS feed: ${rssUrl}`);
+
+      // Parse the RSS feed
+      const parsedRSS = await fetchAndParseRSS(rssUrl);
+
+      // Return successful response with parsed data
+      return c.json({
+        success: true,
+        data: {
+          title: parsedRSS.title,
+          description: parsedRSS.description,
+          imageUrl: parsedRSS.imageUrl || null,
+          language: parsedRSS.language,
+          categories: parsedRSS.categories,
+          author: parsedRSS.author,
+          totalEpisodes: parsedRSS.episodes.length,
+          episodes: parsedRSS.episodes,
+        },
+      });
+    } catch (error) {
+      console.error("RSS preview failed:", error);
+
+      // For RSS parsing errors, return a structured error response
+      if (error instanceof RSSParseError) {
+        return c.json({
+          success: false,
+          errors: [
+            {
+              type: "rss_parse_error",
+              message: error.message,
+              details: error.cause ? { cause: error.cause.message } : undefined,
+            },
+          ],
+        });
+      }
+
+      if (error instanceof RSSValidationError) {
+        return c.json({
+          success: false,
+          errors: [
+            {
+              type: "rss_validation_error",
+              message: error.message,
+              details: { validationErrors: error.validationErrors },
+            },
+          ],
+        });
+      }
+
+      // For other errors, return a generic error response
+      return c.json({
+        success: false,
+        errors: [
+          {
+            type: "unknown_error",
+            message:
+              error instanceof Error ? error.message : "Unknown error occurred",
+          },
+        ],
+      });
+    }
   });
 
   // Update show

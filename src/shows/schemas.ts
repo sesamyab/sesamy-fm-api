@@ -8,12 +8,18 @@ export const CreateShowSchema = z.object({
     .min(1, "Description is required")
     .max(2000, "Description too long"),
   imageUrl: z.nullable(z.string().url()).optional(),
+  language: z.string().optional(),
+  categories: z.array(z.string()).optional(),
+  author: z.string().optional(),
 });
 
 export const UpdateShowSchema = z.object({
   title: z.string().min(1).max(255).optional(),
   description: z.string().min(1).max(2000).optional(),
   imageUrl: z.nullable(z.string().url()).optional(),
+  language: z.string().optional(),
+  categories: z.array(z.string()).optional(),
+  author: z.string().optional(),
 });
 
 // Response schemas
@@ -22,6 +28,9 @@ export const ShowSchema = z.object({
   title: z.string(),
   description: z.string(),
   imageUrl: z.string().nullable(),
+  language: z.string().nullable(),
+  categories: z.array(z.string()).nullable(),
+  author: z.string().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
@@ -43,6 +52,62 @@ export const PaginationSchema = z.object({
 // Path parameters
 export const ShowParamsSchema = z.object({
   show_id: z.string().uuid(),
+});
+
+// Import show from RSS schema
+export const ImportShowFromRSSSchema = z.object({
+  rssUrl: z.string().url("Invalid RSS URL"),
+  maxEpisodes: z.number().int().positive().optional().default(100),
+  skipExistingEpisodes: z.boolean().optional().default(false),
+});
+
+// Import show response schema
+export const ImportShowResponseSchema = z.object({
+  taskId: z.string(),
+  message: z.string(),
+  workflowId: z.string(),
+});
+
+// RSS preview request schema
+export const RSSPreviewRequestSchema = z.object({
+  rssUrl: z.string().url("Invalid RSS URL"),
+});
+
+// RSS preview response schema
+export const RSSPreviewResponseSchema = z.object({
+  success: z.boolean(),
+  data: z
+    .object({
+      title: z.string(),
+      description: z.string(),
+      imageUrl: z.string().nullable().optional(),
+      language: z.string().optional(),
+      categories: z.array(z.string()).optional(),
+      author: z.string().optional(),
+      totalEpisodes: z.number().int().nonnegative(),
+      episodes: z.array(
+        z.object({
+          title: z.string(),
+          description: z.string(),
+          audioUrl: z.string().url(),
+          imageUrl: z.string().url().nullable().optional(),
+          publishedAt: z.string().datetime().nullable().optional(),
+          duration: z.number().positive().nullable().optional(),
+          episodeNumber: z.number().int().positive().nullable().optional(),
+          seasonNumber: z.number().int().positive().nullable().optional(),
+        })
+      ),
+    })
+    .optional(),
+  errors: z
+    .array(
+      z.object({
+        type: z.string(),
+        message: z.string(),
+        details: z.any().optional(),
+      })
+    )
+    .optional(),
 });
 
 // Image upload response schema

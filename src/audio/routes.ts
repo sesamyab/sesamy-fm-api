@@ -141,6 +141,11 @@ export function registerAudioRoutes(
         };
         throw new HTTPException(404, { message: JSON.stringify(problem) });
       }
+
+      // Log the actual error for debugging
+      console.error("Audio upload error:", error);
+
+      // Re-throw to let the global error handler deal with it
       throw error;
     }
   });

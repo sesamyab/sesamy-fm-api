@@ -9,13 +9,7 @@ import { NotFoundError } from "../common/errors.js";
 const TaskStatusSchema = z.enum(["pending", "processing", "done", "failed"]);
 
 // Task type enum
-const TaskTypeSchema = z.enum([
-  "transcribe",
-  "encode",
-  "audio_preprocess",
-  "publish",
-  "notification",
-]);
+const TaskTypeSchema = z.enum(["audio_processing"]);
 
 // Base task schema
 const TaskSchema = z.object({
@@ -66,28 +60,6 @@ const TestEncodeSchema = z.object({
 const TestAudioPreprocessSchema = z.object({
   audioUrl: z.string().url().optional(),
   episodeId: z.string().optional(),
-});
-
-// Test transcription request schema
-const TestTranscribeSchema = z.object({
-  audioUrl: z.string().url().optional(),
-  episodeId: z.string().optional(),
-  chunked: z.boolean().optional().default(false),
-  chunks: z
-    .array(
-      z.object({
-        index: z.number(),
-        url: z.string().url(),
-        key: z.string(),
-        startTime: z.number(),
-        endTime: z.number(),
-        duration: z.number(),
-        size: z.number(),
-        metadata: z.any().optional(),
-      })
-    )
-    .optional(),
-  overlapDuration: z.number().min(0).max(10).optional().default(2),
 });
 
 // Create task route
@@ -213,174 +185,9 @@ const retryTaskRoute = createRoute({
   },
 });
 
-// Test encoding route
-const testEncodeRoute = createRoute({
-  method: "post",
-  path: "/tasks/test-encode",
-  tags: ["tasks"],
-  summary: "Test audio encoding",
-  description:
-    "Create a test encoding task with a predefined audio file to validate FFmpeg functionality (no authentication required)",
-  request: {
-    body: {
-      content: {
-        "application/json": {
-          schema: TestEncodeSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    201: {
-      description: "Test encoding task created successfully",
-      content: {
-        "application/json": {
-          schema: z.object({
-            task: TaskSchema,
-            testInfo: z.object({
-              audioUrl: z.string(),
-              outputFormat: z.string(),
-              bitrate: z.number(),
-              estimatedSize: z.string(),
-            }),
-          }),
-        },
-      },
-    },
-    400: {
-      description: "Invalid request",
-    },
-  },
-});
-
-// Test audio preprocessing route
-const testAudioPreprocessRoute = createRoute({
-  method: "post",
-  path: "/tasks/test-audio-preprocess",
-  tags: ["tasks"],
-  summary: "Test audio preprocessing with chunking",
-  description:
-    "Create a test audio preprocessing task that splits audio into chunks for transcription (no authentication required)",
-  request: {
-    body: {
-      content: {
-        "application/json": {
-          schema: TestAudioPreprocessSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    201: {
-      description: "Test audio preprocessing completed successfully",
-      content: {
-        "application/json": {
-          schema: z.object({
-            chunks: z.array(
-              z.object({
-                index: z.number(),
-                url: z.string(),
-                key: z.string(),
-                startTime: z.number(),
-                endTime: z.number(),
-                duration: z.number(),
-                size: z.number(),
-              })
-            ),
-            totalChunks: z.number(),
-            totalDuration: z.number(),
-            processingMode: z.string(),
-            testMode: z.boolean(),
-            processingTime: z.string(),
-          }),
-        },
-      },
-    },
-    400: {
-      description: "Invalid request",
-    },
-  },
-});
-
-// Test transcription route
-const testTranscribeRoute = createRoute({
-  method: "post",
-  path: "/tasks/test-transcribe",
-  tags: ["tasks"],
-  summary: "Test audio transcription",
-  description:
-    "Create a test transcription task for single files or chunked audio (no authentication required)",
-  request: {
-    body: {
-      content: {
-        "application/json": {
-          schema: TestTranscribeSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    201: {
-      description: "Test transcription completed successfully",
-      content: {
-        "application/json": {
-          schema: z.object({
-            transcriptUrl: z.string(),
-            transcriptKey: z.string(),
-            textLength: z.number(),
-            completedAt: z.string(),
-            processingMode: z.string(),
-            testMode: z.boolean().optional(),
-            chunkDetails: z
-              .object({
-                totalChunks: z.number(),
-                overlapDuration: z.number(),
-                originalTextLength: z.number(),
-                compressionRatio: z.string(),
-              })
-              .optional(),
-            chunks: z
-              .array(
-                z.object({
-                  index: z.number(),
-                  startTime: z.number(),
-                  endTime: z.number(),
-                  wordCount: z.number(),
-                  textLength: z.number(),
-                })
-              )
-              .optional(),
-          }),
-        },
-      },
-    },
-    400: {
-      description: "Invalid request",
-    },
-  },
-});
-
-export const createTaskRoutes = (
-  database?: D1Database,
-  bucket?: R2Bucket,
-  ai?: Ai,
-  queue?: Queue,
-  encodingContainer?: DurableObjectNamespace,
-  r2AccessKeyId?: string,
-  r2SecretAccessKey?: string,
-  r2Endpoint?: string
-) => {
+export const createTaskRoutes = (database?: D1Database) => {
   const app = new OpenAPIHono();
-  const taskService = new TaskService(
-    database,
-    bucket,
-    ai,
-    queue,
-    encodingContainer,
-    r2AccessKeyId,
-    r2SecretAccessKey,
-    r2Endpoint
-  );
+  const taskService = new TaskService(database);
 
   // Helper function to serialize task data for API response
   const serializeTask = (task: any) => ({
@@ -391,128 +198,6 @@ export const createTaskRoutes = (
 
   // Apply authentication middleware - using colon notation to match user permissions
   app.use("*", requireScopes(["podcast:read", "podcast:write"]));
-
-  // Test encode route (no authentication required) - add before auth middleware
-  const testApp = new OpenAPIHono();
-  testApp.openapi(testEncodeRoute, async (c) => {
-    const body = c.req.valid("json");
-
-    try {
-      // Use default test audio URL if none provided
-      const audioUrl =
-        body.audioUrl ||
-        "https://www.soundjay.com/misc/sounds/fail-buzzer-02.mp3";
-      const payload = {
-        audioUrl,
-        outputFormat: body.outputFormat,
-        bitrate: body.bitrate,
-        episodeId: `test-encode-${Date.now()}`, // Generate test episode ID
-      };
-
-      const result = await taskService.testEncode(payload);
-
-      // Create a mock task object for response
-      const mockTask = {
-        id: Date.now(),
-        type: "encode" as const,
-        status: "done" as const,
-        payload,
-        result,
-        error: null,
-        attempts: 1,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-
-      return c.json(
-        {
-          task: mockTask,
-          testInfo: {
-            audioUrl,
-            outputFormat: body.outputFormat,
-            bitrate: body.bitrate,
-            estimatedSize: "~1KB (mock)",
-          },
-        },
-        201
-      );
-    } catch (error) {
-      console.error("Test encoding failed:", error);
-      throw new HTTPException(400, {
-        message:
-          error instanceof Error ? error.message : "Test encoding failed",
-      });
-    }
-  });
-
-  // Test audio preprocessing route handler
-  testApp.openapi(testAudioPreprocessRoute, async (c) => {
-    const body = c.req.valid("json");
-
-    try {
-      // Use default test audio URL if none provided
-      const audioUrl =
-        body.audioUrl ||
-        "https://www.soundjay.com/misc/sounds/fail-buzzer-02.mp3";
-      const payload = {
-        audioUrl,
-        episodeId: body.episodeId || `test-preprocess-${Date.now()}`,
-      };
-
-      const result = await taskService.testAudioPreprocess(payload);
-
-      return c.json(result, 201);
-    } catch (error) {
-      console.error("Test audio preprocessing failed:", error);
-      throw new HTTPException(400, {
-        message:
-          error instanceof Error
-            ? error.message
-            : "Test audio preprocessing failed",
-      });
-    }
-  });
-
-  // Test transcription route handler
-  testApp.openapi(testTranscribeRoute, async (c) => {
-    const body = c.req.valid("json");
-
-    try {
-      let payload;
-
-      if (body.chunked && body.chunks) {
-        // Chunked transcription
-        payload = {
-          episodeId: body.episodeId || `test-transcribe-chunked-${Date.now()}`,
-          chunked: true,
-          chunks: body.chunks,
-          overlapDuration: body.overlapDuration,
-        };
-      } else {
-        // Single file transcription
-        const audioUrl =
-          body.audioUrl ||
-          "https://www.soundjay.com/misc/sounds/fail-buzzer-02.mp3";
-        payload = {
-          audioUrl,
-          episodeId: body.episodeId || `test-transcribe-${Date.now()}`,
-        };
-      }
-
-      const result = await taskService.testTranscribe(payload);
-
-      return c.json(result, 201);
-    } catch (error) {
-      console.error("Test transcription failed:", error);
-      throw new HTTPException(400, {
-        message:
-          error instanceof Error ? error.message : "Test transcription failed",
-      });
-    }
-  });
-
-  // Mount test routes without authentication
-  app.route("/", testApp);
 
   // Create task
   app.openapi(createTaskRoute, async (c) => {
@@ -565,6 +250,155 @@ export const createTaskRoutes = (
         throw new HTTPException(400, { message: error.message });
       }
       throw new HTTPException(500, { message: "Internal server error" });
+    }
+  });
+
+  // Internal routes for workflow updates (no auth required)
+
+  // Update task status
+  app.patch("/internal/tasks/:task_id/status", async (c) => {
+    const { task_id } = c.req.param();
+    const { status, message } = await c.req.json();
+
+    try {
+      const taskId = parseInt(task_id);
+
+      const task = await taskService.updateTaskStatus(taskId, status, {
+        message,
+      });
+
+      return c.json({ success: true, task: serializeTask(task) });
+    } catch (error) {
+      console.error("Error updating task status:", error);
+      return c.json(
+        { success: false, error: "Failed to update task status" },
+        500
+      );
+    }
+  });
+
+  // Update task progress
+  app.patch("/internal/tasks/:task_id/progress", async (c) => {
+    const { task_id } = c.req.param();
+    const { progress, message } = await c.req.json();
+
+    try {
+      const taskId = parseInt(task_id);
+
+      const task = await taskService.updateTaskProgress(
+        taskId,
+        progress,
+        message
+      );
+
+      return c.json({ success: true, task: serializeTask(task) });
+    } catch (error) {
+      console.error("Error updating task progress:", error);
+      return c.json(
+        { success: false, error: "Failed to update task progress" },
+        500
+      );
+    }
+  });
+
+  // Workflow progress reporting
+  app.post("/internal/workflow-progress", async (c) => {
+    const { taskId, workflowId, step, progress, message, data } =
+      await c.req.json();
+
+    try {
+      // Update task progress and store step information
+      const task = await taskService.updateTaskProgress(
+        taskId,
+        progress,
+        message
+      );
+
+      return c.json({ success: true, task: serializeTask(task) });
+    } catch (error) {
+      console.error("Error reporting workflow progress:", error);
+      return c.json(
+        { success: false, error: "Failed to report workflow progress" },
+        500
+      );
+    }
+  });
+
+  // Workflow status reporting
+  app.post("/internal/workflow-status", async (c) => {
+    const { taskId, workflowId, status, message, data } = await c.req.json();
+
+    try {
+      const task = await taskService.updateTaskStatus(taskId, status, {
+        message,
+      });
+
+      return c.json({ success: true, task: serializeTask(task) });
+    } catch (error) {
+      console.error("Error reporting workflow status:", error);
+      return c.json(
+        { success: false, error: "Failed to report workflow status" },
+        500
+      );
+    }
+  });
+
+  // Encoding progress reporting from containers
+  app.post("/internal/encoding-progress", async (c) => {
+    const { jobId, progress, chunkIndex, timestamp, taskId, step } =
+      await c.req.json();
+
+    try {
+      // Log the progress update
+      console.log(
+        `Encoding progress update: Job ${jobId}${
+          taskId ? ` (Task ${taskId})` : ""
+        }, Progress: ${progress}%${
+          chunkIndex !== undefined ? `, Chunk: ${chunkIndex}` : ""
+        } at ${timestamp}`
+      );
+
+      // If we have a task ID, update the task progress
+      if (taskId && typeof taskId === "number") {
+        try {
+          const message = step
+            ? `${step}: ${progress}%${
+                chunkIndex !== undefined ? ` (chunk ${chunkIndex})` : ""
+              }`
+            : `Encoding: ${progress}%${
+                chunkIndex !== undefined ? ` (chunk ${chunkIndex})` : ""
+              }`;
+
+          await taskService.updateTaskProgress(taskId, progress, message);
+
+          return c.json({
+            success: true,
+            received: true,
+            taskUpdated: true,
+            taskId,
+          });
+        } catch (taskError) {
+          console.error(`Failed to update task ${taskId} progress:`, taskError);
+          // Still acknowledge the progress even if task update failed
+          const errorMessage =
+            taskError instanceof Error ? taskError.message : String(taskError);
+          return c.json({
+            success: true,
+            received: true,
+            taskUpdated: false,
+            error: `Task update failed: ${errorMessage}`,
+          });
+        }
+      }
+
+      // No task ID provided, just acknowledge
+      return c.json({ success: true, received: true, taskUpdated: false });
+    } catch (error) {
+      console.error("Error processing encoding progress:", error);
+      return c.json(
+        { success: false, error: "Failed to process encoding progress" },
+        500
+      );
     }
   });
 

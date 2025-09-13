@@ -15,7 +15,8 @@ export async function audioEncoding(
     container,
     workflowState.audioR2Key,
     workflowState.encodingFormats,
-    workflowState.episodeId
+    workflowState.episodeId,
+    workflowState.taskId ? parseInt(workflowState.taskId) : undefined
   );
 
   return {

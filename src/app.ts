@@ -1,5 +1,3 @@
-/// <reference types="@cloudflare/workers-types" />
-
 import { OpenAPIHono } from "@hono/zod-openapi";
 import { swaggerUI } from "@hono/swagger-ui";
 import { cors } from "hono/cors";
@@ -14,10 +12,9 @@ import { registerAudioRoutes } from "./audio/routes";
 import { registerFeedRoutes } from "./feed/routes";
 import { createTaskRoutes } from "./tasks/routes";
 import { createEncodingRoutes } from "./encoding/routes";
-import { createTranscriptionRoutes } from "./transcription/routes";
 import { createWorkflowRoutes } from "./workflows/routes";
 import storageRoutes from "./storage/routes";
-import { EncodingContainer } from "./encoding/container";
+import { createCampaignRoutes } from "./campaigns/routes";
 
 // Services
 import { EventPublisher } from "./events/publisher";
@@ -25,23 +22,11 @@ import { ShowRepository } from "./shows/repository";
 import { ShowService } from "./shows/service";
 import { EpisodeRepository } from "./episodes/repository";
 import { EpisodeService } from "./episodes/service";
-import { AudioRepository } from "./audio/repository";
 import { AudioService } from "./audio/service";
 import { ImageService } from "./images/service";
 import { TaskService } from "./tasks/service";
-
-// Type for encoding service response
-interface EncodingServiceResponse {
-  success: boolean;
-  error?: string;
-  metadata?: {
-    format?: string;
-    bitrate?: number;
-    size?: number;
-    duration?: number;
-  };
-  testInfo?: Record<string, any>;
-}
+import { CampaignRepository } from "./campaigns/repository";
+import { CampaignService } from "./campaigns/service";
 
 export function createApp(
   database?: D1Database,
@@ -52,7 +37,8 @@ export function createApp(
   ai?: Ai,
   queue?: Queue,
   encodingContainer?: DurableObjectNamespace,
-  audioProcessingWorkflow?: Workflow
+  audioProcessingWorkflow?: Workflow,
+  importShowWorkflow?: Workflow
 ) {
   const app = new OpenAPIHono();
 
@@ -63,16 +49,7 @@ export function createApp(
   const showService = new ShowService(showRepository, eventPublisher);
 
   const episodeRepository = new EpisodeRepository(database);
-  const taskService = new TaskService(
-    database,
-    bucket,
-    ai,
-    queue,
-    encodingContainer,
-    r2AccessKeyId,
-    r2SecretAccessKey,
-    r2Endpoint
-  );
+  const taskService = new TaskService(database, audioProcessingWorkflow);
   const episodeService = new EpisodeService(
     episodeRepository,
     eventPublisher,
@@ -99,6 +76,12 @@ export function createApp(
           database
         )
       : undefined;
+
+  const campaignRepository = new CampaignRepository(database);
+  const campaignService = new CampaignService(
+    campaignRepository,
+    eventPublisher
+  );
 
   // Global middleware
   app.use("*", cors());
@@ -135,7 +118,8 @@ export function createApp(
       { name: "episodes", description: "Episode management" },
       { name: "audio", description: "Audio file management" },
       { name: "tasks", description: "Background task management" },
-      { name: "transcription", description: "Audio transcription services" },
+      { name: "campaigns", description: "Advertising campaigns management" },
+      { name: "creatives", description: "Campaign creatives management" },
     ],
   });
 
@@ -157,21 +141,6 @@ export function createApp(
     createEncodingRoutes(encodingContainer, database, bucket, ai, queue)
   );
 
-  // Transcription routes
-  app.route(
-    "/",
-    createTranscriptionRoutes(
-      database,
-      bucket,
-      ai,
-      queue,
-      encodingContainer,
-      r2AccessKeyId,
-      r2SecretAccessKey,
-      r2Endpoint
-    )
-  );
-
   // All other routes require authentication
   app.use("/shows/*", (c, next) => {
     // Skip auth for RSS feed endpoints
@@ -183,6 +152,7 @@ export function createApp(
   app.use("/tasks/*", authMiddleware);
   app.use("/encoding/*", authMiddleware);
   app.use("/workflows/*", authMiddleware);
+  app.use("/campaigns/*", authMiddleware);
 
   // Apply auth to transcription routes except /transcription/test
   app.use("/transcription/*", (c, next) => {
@@ -194,7 +164,14 @@ export function createApp(
   });
 
   // Register API routes
-  registerShowRoutes(app, showService, audioService, imageService);
+  registerShowRoutes(
+    app,
+    showService,
+    audioService,
+    imageService,
+    database,
+    importShowWorkflow
+  );
   registerEpisodeRoutes(
     app,
     episodeService,
@@ -203,38 +180,14 @@ export function createApp(
     bucket
   );
   registerAudioRoutes(app, audioService);
-  app.route(
-    "/",
-    createTaskRoutes(
-      database,
-      bucket,
-      ai,
-      queue,
-      encodingContainer,
-      r2AccessKeyId,
-      r2SecretAccessKey,
-      r2Endpoint
-    )
-  );
+  app.route("/", createTaskRoutes(database));
   app.route(
     "/",
     createEncodingRoutes(encodingContainer, database, bucket, ai, queue)
   );
-  app.route(
-    "/",
-    createTranscriptionRoutes(
-      database,
-      bucket,
-      ai,
-      queue,
-      encodingContainer,
-      r2AccessKeyId,
-      r2SecretAccessKey,
-      r2Endpoint
-    )
-  );
 
   app.route("/", createWorkflowRoutes());
+  app.route("/", createCampaignRoutes(campaignService, audioService));
 
   return app;
 }

@@ -71,35 +71,4 @@ export class EpisodeService {
 
     return true;
   }
-
-  async createTranscriptionTask(showId: string, episodeId: string) {
-    if (!this.taskService) {
-      throw new Error("Task service not available");
-    }
-
-    const episode = await this.episodeRepository.findById(showId, episodeId);
-    if (!episode) {
-      throw new Error("Episode not found");
-    }
-
-    if (!episode.audioUrl) {
-      throw new Error("Episode has no audio URL");
-    }
-
-    // Create transcription task
-    const task = await this.taskService.createTask("transcribe", {
-      episodeId: episode.id,
-      audioUrl: episode.audioUrl,
-      showId: episode.showId,
-    });
-
-    // Publish event
-    await this.eventPublisher.publish(
-      "episode.transcription_requested",
-      { episodeId: episode.id, taskId: task.id },
-      episode.id
-    );
-
-    return task;
-  }
 }

@@ -23,6 +23,7 @@ export const AudioProcessingParamsSchema = z.object({
   overlapDuration: z.number().positive().optional().default(2),
   encodingFormats: z.array(z.string()).optional().default(["mp3_128"]),
   taskId: z.string().optional(),
+  workflowId: z.string().optional(),
   transcriptionLanguage: z.string().optional().default("en"),
 });
 

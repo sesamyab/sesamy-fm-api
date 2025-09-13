@@ -1,5 +1,41 @@
 # Podcast Service - Cloudflare Workers Edition
 
+## RSS Import & Preview
+
+The service supports importing podcast shows directly from RSS feeds with validation and preview capabilities:
+
+### RSS Preview Endpoint
+
+- **Endpoint**: `POST /shows/preview-rss`
+- **Purpose**: Parse and validate RSS feeds without importing
+- **Returns**: Complete show and episode data in JSON format
+- **Includes**: Validation errors and parsing issues
+
+### RSS Import Workflow
+
+- **Endpoint**: `POST /shows/import`
+- **Purpose**: Import entire podcast shows from RSS feeds
+- **Features**: Asynchronous processing, progress tracking, configurable episode limits
+- **Workflow**: RSS validation → Show creation → Episode processing
+
+### Usage Examples
+
+```bash
+# Preview RSS feed
+curl -X POST https://your-api.com/shows/preview-rss \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"rssUrl": "https://feeds.example.com/podcast.xml"}'
+
+# Import from RSS
+curl -X POST https://your-api.com/shows/import \
+  -H "Authorization: Bearer <token>" \
+  -H "Content-Type: application/json" \
+  -d '{"rssUrl": "https://feeds.example.com/podcast.xml", "maxEpisodes": 50}'
+```
+
+See [IMPORT_SHOW_FROM_RSS.md](./IMPORT_SHOW_FROM_RSS.md) for detailed documentation.
+
 # Storage of Images and Audio Files
 
 Uploaded images and audio files are stored in Cloudflare R2, a highly durable and scalable object storage service. This allows for efficient storage and retrieval of large media files, making the service suitable for podcast hosting and distribution. When you upload an image or audio file via the API, it is automatically saved to R2 and referenced in the database.
