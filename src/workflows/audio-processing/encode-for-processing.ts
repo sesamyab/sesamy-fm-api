@@ -49,13 +49,13 @@ export class EncodeForProcessingStep
 
     // Generate R2 key for the encoded file
     const encodedFileId = uuidv4();
-    const encodedR2Key = `processing/${workflowState.episodeId}/${encodedFileId}_48k_mono.mp3`;
+    const encodedR2Key = `processing/${workflowState.episodeId}/${encodedFileId}_24k_mono.opus`;
 
     // Generate presigned URL for uploading the encoded file
     const encodedUploadResult = await generateSignedUploadUrl(
       this.env,
       encodedR2Key,
-      "audio/mpeg", // Content-Type for MP3 files
+      "audio/opus", // Content-Type for Opus files
       3600 // 1 hour expiration
     );
 
@@ -83,8 +83,8 @@ export class EncodeForProcessingStep
           body: JSON.stringify({
             audioUrl: audioDownloadUrl.url,
             uploadUrl: encodedUploadResult.url,
-            outputFormat: "mp3", // Use MP3 codec (supported by container)
-            bitrate: 48, // 48 kbps for better quality
+            outputFormat: "opus",
+            bitrate: 24,
             channels: 1, // Mono
             sampleRate: 16000, // 16 kHz for optimal transcription
           }),

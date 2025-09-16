@@ -9,8 +9,17 @@ NODE_ENV = "development"
 PORT = "8787"
 R2_ENDPOINT = "https://podcast-media.sesamy.dev"
 SERVICE_BASE_URL = "https://podcast-service.sesamy-dev.workers.dev"
-# Encoding service provider: 'aws' (default) or 'cloudflare'
+# Encoding service provider: 'aws' (default) or 'cloudflare'  
 ENCODING_SERVICE_PROVIDER = "aws"
+# TTS Configuration - nova-3 as default
+DEFAULT_TTS_MODEL = "@cf/openai/tts-1-hd"
+DEFAULT_TTS_VOICE = "nova"  
+# Transcription Configuration - nova-3 for enhanced features
+DEFAULT_TRANSCRIPTION_MODEL = "@cf/deepgram/nova-3"
+USE_NOVA3_FEATURES = "true"
+# Text-to-Speech configuration
+TTS_DEFAULT_MODEL = "@cf/openai/tts-1-hd"
+TTS_DEFAULT_VOICE = "nova"
 
 # Secrets to be set with: wrangler secret put <name>
 # - DATABASE_URL (for production Turso database)
@@ -34,14 +43,6 @@ preview_bucket_name = "podcast-service-assets"
 # Workers AI binding
 [ai]
 binding = "AI"
-
-# Queue bindings for background task processing
-[[queues.producers]]
-binding = "TASK_QUEUE"
-queue = "podcast-tasks"
-
-[[queues.consumers]]
-queue = "podcast-tasks"
 
 # Container configuration for encoding service
 [[containers]]

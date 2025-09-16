@@ -66,7 +66,7 @@ curl -X POST http://localhost:8787/wf-debug/audio-processing/initialize \\
   -d '{
     "episodeId": "episode-123",
     "audioR2Key": "uploads/audio-file.mp3",
-    "chunkDuration": 30,
+    "chunkDuration": 60,
     "transcriptionLanguage": "en"
   }'
 ```
@@ -80,7 +80,7 @@ curl -X POST http://localhost:8787/wf-debug/audio-processing/encode \\
     "workflowId": "workflow-uuid",
     "episodeId": "episode-123",
     "audioR2Key": "uploads/audio-file.mp3",
-    "chunkDuration": 30,
+    "chunkDuration": 60,
     "overlapDuration": 2,
     "encodingFormats": ["mp3_128"],
     "startedAt": "2025-09-09T10:00:00.000Z",

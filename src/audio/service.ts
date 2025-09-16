@@ -1,5 +1,3 @@
-/// <reference types="@cloudflare/workers-types" />
-
 import { v4 as uuidv4 } from "uuid";
 import { AudioRepository } from "./repository";
 import { EventPublisher } from "../events/publisher";
@@ -172,7 +170,7 @@ export class AudioService {
     // Process uploaded audio with workflow or fallback to tasks
     try {
       console.log(`Starting audio processing workflow`);
-      await this.processUploadedAudio(episodeId, showId, audioId, url); // Pass R2 key instead of signed URL
+      await this.processUploadedAudio(episodeId, url, 600); // Pass R2 key and 10-minute chunks for nova-3
       console.log(`Audio processing workflow started successfully`);
     } catch (error) {
       console.error("Failed to start audio processing:", error);
@@ -193,15 +191,33 @@ export class AudioService {
   // Process uploaded audio by creating a task that will start the workflow
   private async processUploadedAudio(
     episodeId: string,
-    showId: string,
-    audioId: string,
-    audioR2Key: string // Changed parameter name to be clearer
+    audioR2Key: string, // Changed parameter name to be clearer
+    chunkDuration: number = 600 // Default to 10 minutes for nova-3
   ): Promise<void> {
     console.log(
       `Creating audio processing task for uploaded audio: episodeId=${episodeId}`
     );
 
     try {
+      // Get the episode to find the show ID
+      const episode = await this.episodeRepo.findByIdOnly(episodeId);
+      if (!episode) {
+        throw new Error(`Episode ${episodeId} not found`);
+      }
+
+      // Get the show to determine the language
+      const { ShowRepository } = await import("../shows/repository.js");
+      const showRepo = new ShowRepository(this.database);
+      const show = await showRepo.findById(episode.showId);
+
+      // Use show language if available, otherwise fall back to environment variable or "en"
+      const transcriptionLanguage =
+        show?.language || process.env.DEFAULT_TRANSCRIPTION_LANGUAGE || "en";
+
+      console.log(
+        `Using transcription language: ${transcriptionLanguage} for show ${episode.showId}`
+      );
+
       // Import TaskService dynamically to avoid circular dependencies
       const { TaskService } = await import("../tasks/service.js");
 
@@ -218,10 +234,9 @@ export class AudioService {
       const task = await taskService.createTask("audio_processing", {
         episodeId,
         audioR2Key, // Use R2 key instead of signed URL
-        chunkDuration: 30,
-        overlapDuration: 2,
+        chunkDuration,
         encodingFormats: ["mp3_128"], // Use MP3 format with auto-adjusted bitrate based on mono/stereo
-        transcriptionLanguage: "en", // Default to English to prevent mixed language issues
+        transcriptionLanguage,
       });
 
       console.log(
@@ -362,12 +377,28 @@ export class AudioService {
     episodeId: string,
     audioR2Key: string,
     options?: {
-      chunkDuration?: number;
-      overlapDuration?: number;
       encodingFormats?: string[];
-      transcriptionLanguage?: string;
     }
   ) {
+    // Get the episode to find the show ID
+    const episode = await this.episodeRepo.findByIdOnly(episodeId);
+    if (!episode) {
+      throw new Error(`Episode ${episodeId} not found`);
+    }
+
+    // Get the show to determine the language
+    const { ShowRepository } = await import("../shows/repository.js");
+    const showRepo = new ShowRepository(this.database);
+    const show = await showRepo.findById(episode.showId);
+
+    // Use show language if available, otherwise fall back to environment variable or "en"
+    const transcriptionLanguage =
+      show?.language || process.env.DEFAULT_TRANSCRIPTION_LANGUAGE || "en";
+
+    console.log(
+      `Using transcription language: ${transcriptionLanguage} for show ${episode.showId}`
+    );
+
     // Import TaskService to create the task
     const { TaskService } = await import("../tasks/service.js");
 
@@ -378,20 +409,30 @@ export class AudioService {
       this.audioProcessingWorkflow
     );
 
+    // Get transcription model from environment or default to nova-3
+    const transcriptionModel =
+      process.env.DEFAULT_TRANSCRIPTION_MODEL || "@cf/deepgram/nova-3";
+
+    // Set chunk duration based on model: 30 seconds for whisper, 10 minutes for nova-3
+    const defaultChunkDuration = transcriptionModel.includes("whisper")
+      ? 30
+      : 600;
+
     const payload = {
       episodeId,
       audioR2Key,
-      chunkDuration: options?.chunkDuration || 30,
-      overlapDuration: options?.overlapDuration || 2,
+      chunkDuration: defaultChunkDuration,
       encodingFormats: options?.encodingFormats || ["mp3_128"],
-      transcriptionLanguage: options?.transcriptionLanguage || "en",
+      transcriptionModel,
+      useNova3Features: transcriptionModel.includes("nova"),
+      transcriptionLanguage,
     };
 
     // Create an audio_processing task
     const task = await taskService.createTask("audio_processing", payload);
 
     console.log(
-      `Created audio processing task ${task.id} for episode ${episodeId}`
+      `Created audio processing task ${task.id} for episode ${episodeId} using ${transcriptionModel} (${payload.chunkDuration}s chunks) with language ${transcriptionLanguage}`
     );
 
     return task;

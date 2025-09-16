@@ -1,14 +1,8 @@
 import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
-import { logger } from "../telemetry-cf";
 
 export const errorHandler: ErrorHandler = (err, c) => {
-  logger.error(`Error in ${c.req.method} ${c.req.path}:`, {
-    error: err.message,
-    stack: err.stack,
-  });
-
   // Handle Zod validation errors
   if (err instanceof ZodError) {
     const validationErrors = err.errors

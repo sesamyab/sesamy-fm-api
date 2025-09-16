@@ -13,18 +13,24 @@ export type Env = {
   R2_ENDPOINT: string;
   STORAGE_SIGNATURE_SECRET: string;
   SERVICE_BASE_URL?: string; // Base URL for the service (e.g., https://your-worker.workers.dev)
+  // Transcription settings
+  DEFAULT_TRANSCRIPTION_LANGUAGE?: string; // Language code for transcription (e.g., 'en', 'es', 'fr')
+  DEFAULT_TRANSCRIPTION_MODEL?: string; // Default transcription model (e.g., '@cf/deepgram/nova-3')
+  USE_NOVA3_FEATURES?: string; // Whether to use nova-3 features ('true' or 'false')
 };
 
 // Zod schemas for validation
 export const AudioProcessingParamsSchema = z.object({
   episodeId: z.string().min(1, "Episode ID is required"),
   audioR2Key: z.string().min(1, "Audio R2 key is required"),
-  chunkDuration: z.number().positive().optional().default(30),
+  chunkDuration: z.number().positive().optional().default(60),
   overlapDuration: z.number().positive().optional().default(2),
   encodingFormats: z.array(z.string()).optional().default(["mp3_128"]),
   taskId: z.string().optional(),
   workflowId: z.string().optional(),
   transcriptionLanguage: z.string().optional().default("en"),
+  transcriptionModel: z.string().optional().default("@cf/deepgram/nova-3"),
+  useNova3Features: z.boolean().optional().default(true),
 });
 
 export const WorkflowStateSchema = z.object({
@@ -37,6 +43,8 @@ export const WorkflowStateSchema = z.object({
   startedAt: z.string().datetime(),
   taskId: z.string().optional(),
   transcriptionLanguage: z.string(),
+  transcriptionModel: z.string(),
+  useNova3Features: z.boolean(),
   previewDownloadUrl: z.string().url(),
 });
 
@@ -94,10 +102,185 @@ export const AudioChunkSchema = z.object({
     .optional(),
 });
 
+export const WordSchema = z.object({
+  word: z.string(),
+  start: z.number().nonnegative(),
+  end: z.number().nonnegative(),
+});
+
+// Nova-3 specific schemas
+export const Nova3SpeakerSchema = z.object({
+  speaker: z.string(),
+  start: z.number(),
+  end: z.number(),
+  confidence: z.number().optional(),
+});
+
+export const ChapterSchema = z.object({
+  title: z.string(),
+  startTime: z.number().nonnegative(),
+  endTime: z.number().nonnegative(),
+  summary: z.string().optional(),
+});
+
 export const TranscribedChunkSchema = z.object({
-  text: z.string(),
+  words: z.array(WordSchema),
   startTime: z.number().nonnegative(),
   endTime: z.number().positive(),
+  chunkIndex: z.number().int().nonnegative(),
+  metadata: z
+    .object({
+      language: z.string().optional(),
+      sentiments: z
+        .array(
+          z.object({
+            text: z.string(),
+            sentiment: z.enum(["positive", "negative", "neutral"]),
+            confidence: z.number(),
+            start: z.number(),
+            end: z.number(),
+          })
+        )
+        .optional(),
+      summary: z.string().optional(),
+      speakers: z.array(Nova3SpeakerSchema).optional(),
+      keywords: z
+        .array(
+          z.object({
+            keyword: z.string(),
+            confidence: z.number(),
+            start: z.number(),
+            end: z.number(),
+          })
+        )
+        .optional(),
+      paragraphs: z
+        .array(
+          z.object({
+            text: z.string(),
+            start: z.number(),
+            end: z.number(),
+            speaker: z.string().optional(),
+          })
+        )
+        .optional(),
+      chapters: z.array(ChapterSchema).optional(),
+      ttsAudioUrl: z.string().url().optional(), // Add TTS audio URL field
+    })
+    .optional(),
+});
+
+export const EnhancedTranscriptResultSchema = z.object({
+  enhancedTranscriptUrl: z.string().url(),
+  keywords: z.array(z.string()),
+  chapters: z.array(ChapterSchema),
+  paragraphs: z.number().positive(),
+  summary: z.string().optional(),
+});
+
+export const ComprehensiveTranscriptSchema = z.object({
+  text: z.string(),
+  html: z.string(),
+  markdown: z.string(),
+  originalWords: z.array(WordSchema),
+  totalWords: z.number(),
+  totalParagraphs: z.number(),
+});
+
+// Nova-3 complete response schema with nested types
+export const Nova3ResponseSchema = z.object({
+  result: z.object({
+    results: z.object({
+      channels: z.array(
+        z.object({
+          alternatives: z.array(
+            z.object({
+              confidence: z.number(),
+              paragraphs: z.object({
+                paragraphs: z.array(
+                  z.object({
+                    end: z.number(),
+                    num_words: z.number(),
+                    sentences: z.array(
+                      z.object({
+                        end: z.number(),
+                        start: z.number(),
+                        text: z.string(),
+                      })
+                    ),
+                    speaker: z.number(),
+                    start: z.number(),
+                  })
+                ),
+                transcript: z.string(),
+              }),
+              transcript: z.string(),
+              words: z.array(
+                z.object({
+                  confidence: z.number(),
+                  end: z.number(),
+                  punctuated_word: z.string(),
+                  speaker: z.number(),
+                  speaker_confidence: z.number(),
+                  start: z.number(),
+                  word: z.string(),
+                })
+              ),
+            })
+          ),
+          detected_language: z.string(),
+          language_confidence: z.number(),
+        })
+      ),
+    }),
+    usage: z.object({
+      prompt_tokens: z.number(),
+      completion_tokens: z.number(),
+      total_tokens: z.number(),
+    }),
+  }),
+  success: z.boolean(),
+  errors: z.array(z.unknown()),
+  messages: z.array(z.unknown()),
+});
+
+export const Nova3TranscriptionSchema = z.object({
+  text: z.string(),
+  language: z.string().optional(),
+  summary: z.string().optional(),
+  sentiments: z
+    .array(
+      z.object({
+        text: z.string(),
+        sentiment: z.enum(["positive", "negative", "neutral"]),
+        confidence: z.number(),
+        start: z.number(),
+        end: z.number(),
+      })
+    )
+    .optional(),
+  speakers: z.array(Nova3SpeakerSchema).optional(),
+  keywords: z
+    .array(
+      z.object({
+        keyword: z.string(),
+        confidence: z.number(),
+        start: z.number(),
+        end: z.number(),
+      })
+    )
+    .optional(),
+  paragraphs: z
+    .array(
+      z.object({
+        text: z.string(),
+        start: z.number(),
+        end: z.number(),
+        speaker: z.string().optional(),
+      })
+    )
+    .optional(),
+  words: z.array(WordSchema).optional(),
 });
 
 export const StepOutputSchema = z.object({
@@ -116,8 +299,19 @@ export type AudioMetadata = z.infer<typeof AudioMetadataSchema>;
 export type ChunkingResult = z.infer<typeof ChunkingResultSchema>;
 export type EncodingResult = z.infer<typeof EncodingResultSchema>;
 export type AudioChunk = z.infer<typeof AudioChunkSchema>;
+export type Word = z.infer<typeof WordSchema>;
 export type TranscribedChunk = z.infer<typeof TranscribedChunkSchema>;
+export type Chapter = z.infer<typeof ChapterSchema>;
+export type EnhancedTranscriptResult = z.infer<
+  typeof EnhancedTranscriptResultSchema
+>;
+export type ComprehensiveTranscript = z.infer<
+  typeof ComprehensiveTranscriptSchema
+>;
 export type StepOutput = z.infer<typeof StepOutputSchema>;
+export type Nova3Speaker = z.infer<typeof Nova3SpeakerSchema>;
+export type Nova3Transcription = z.infer<typeof Nova3TranscriptionSchema>;
+export type Nova3Response = z.infer<typeof Nova3ResponseSchema>;
 
 // Base workflow step interface
 export interface WorkflowStep<TInput, TOutput> {

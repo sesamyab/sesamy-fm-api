@@ -21,7 +21,6 @@ interface CloudflareEnv {
   R2_ACCESS_KEY_ID?: string;
   R2_SECRET_ACCESS_KEY?: string;
   R2_ENDPOINT?: string; // Full R2 endpoint URL with account ID
-  TASK_QUEUE?: Queue;
   ENCODING_CONTAINER: DurableObjectNamespace;
   AUDIO_PROCESSING_WORKFLOW?: Workflow;
   IMPORT_SHOW_WORKFLOW?: Workflow;
@@ -29,6 +28,9 @@ interface CloudflareEnv {
   AWS_LAMBDA_ENCODING_URL?: string;
   AWS_LAMBDA_API_KEY?: string;
   ENCODING_SERVICE_PROVIDER?: string;
+  // TTS configuration
+  TTS_DEFAULT_MODEL?: string;
+  TTS_DEFAULT_VOICE?: string;
 }
 
 export default {
@@ -45,7 +47,6 @@ export default {
       env.R2_SECRET_ACCESS_KEY,
       env.R2_ENDPOINT,
       env.AI,
-      env.TASK_QUEUE,
       env.ENCODING_CONTAINER,
       env.AUDIO_PROCESSING_WORKFLOW,
       env.IMPORT_SHOW_WORKFLOW,
@@ -75,26 +76,22 @@ export default {
     const taskProcessor = new TaskProcessor(env.DB);
     await taskProcessor.handleScheduledTask(event);
   },
+
   async queue(
-    batch: { messages: Array<{ body: any }> },
+    batch: MessageBatch,
     env: CloudflareEnv,
     ctx: ExecutionContext
-  ) {
-    // Process messages from TASK_QUEUE
-    const taskProcessor = new TaskProcessor(env.DB);
-    for (const msg of batch.messages) {
-      try {
-        const { type, taskId, payload } = msg.body;
+  ): Promise<void> {
+    // Empty queue handler for deployment compatibility
+    console.log(`Processing ${batch.messages.length} queue messages`);
 
-        if (taskId) {
-          // Process specific task by ID for immediate processing
-          await taskProcessor.processSpecificTask(taskId);
-        } else {
-          // Fallback to batch processing
-          await taskProcessor.processTasks(1);
-        }
-      } catch (err) {
-        console.error("Error processing queue message:", err);
+    for (const message of batch.messages) {
+      try {
+        console.log("Processing message:", message.id);
+        message.ack();
+      } catch (error) {
+        console.error("Error processing queue message:", error);
+        message.retry();
       }
     }
   },

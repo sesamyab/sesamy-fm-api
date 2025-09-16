@@ -21,8 +21,8 @@ build/
 
 # Database
 *.sqlite
-*.db
-data/app.db
+*.db    
+data/
 
 # VS Code
 .vscode/

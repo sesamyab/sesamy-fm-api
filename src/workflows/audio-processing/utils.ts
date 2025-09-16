@@ -2,7 +2,7 @@ import {
   generateSignedDownloadUrl,
   generateSignedUploadUrl,
 } from "../../utils/storage";
-import type { Env, EncodingResult, TranscribedChunk } from "./types";
+import type { Env, EncodingResult, TranscribedChunk, Word } from "./types";
 
 export async function processEncodingFormats(
   env: Env,
@@ -223,44 +223,69 @@ export async function processEncodingFormats(
 export function mergeTranscriptions(
   chunks: TranscribedChunk[],
   overlapDuration: number
-): { text: string; totalWords: number } {
-  if (chunks.length === 0) return { text: "", totalWords: 0 };
-  if (chunks.length === 1) {
-    const wordCount = chunks[0].text
-      .split(/\s+/)
-      .filter((word) => word.length > 0).length;
-    return { text: chunks[0].text, totalWords: wordCount };
-  }
+): {
+  text: string;
+  totalWords: number;
+  words: Array<{ word: string; start: number; end: number }>;
+} {
+  if (chunks.length === 0) return { text: "", totalWords: 0, words: [] };
 
-  let mergedText = chunks[0].text;
+  // Collect all words from all chunks
+  const allWords: Array<{ word: string; start: number; end: number }> = [];
 
-  for (let i = 1; i < chunks.length; i++) {
-    const currentChunk = chunks[i];
-    const previousChunk = chunks[i - 1];
-
-    const overlapStartTime = currentChunk.startTime;
-    const overlapEndTime = previousChunk.endTime;
-    const actualOverlap = Math.min(
-      overlapEndTime - overlapStartTime,
-      overlapDuration
-    );
-
-    if (actualOverlap > 0) {
-      const chunkDuration = currentChunk.endTime - currentChunk.startTime;
-      const estimatedOverlapRatio = actualOverlap / chunkDuration;
-      const currentWords = currentChunk.text.trim().split(/\s+/);
-      const wordsToSkip = Math.floor(
-        currentWords.length * estimatedOverlapRatio
-      );
-      const nonOverlapWords = currentWords.slice(wordsToSkip);
-      mergedText += " " + nonOverlapWords.join(" ");
-    } else {
-      mergedText += " " + currentChunk.text;
+  for (const chunk of chunks) {
+    // Ensure each word has all required properties
+    for (const word of chunk.words) {
+      if (
+        word.word &&
+        typeof word.start === "number" &&
+        typeof word.end === "number"
+      ) {
+        allWords.push({
+          word: word.word,
+          start: word.start,
+          end: word.end,
+        });
+      }
     }
   }
 
-  const totalWords = mergedText
-    .split(/\s+/)
-    .filter((word) => word.length > 0).length;
-  return { text: mergedText.trim(), totalWords };
+  // Sort words by start time to ensure correct order
+  allWords.sort((a, b) => a.start - b.start);
+
+  // Remove overlapping words based on time overlap
+  const mergedWords: Array<{ word: string; start: number; end: number }> = [];
+
+  for (const word of allWords) {
+    // Check if this word overlaps with the last added word
+    const lastWord = mergedWords[mergedWords.length - 1];
+
+    if (!lastWord) {
+      // First word, always add
+      mergedWords.push(word);
+    } else {
+      // Check for time overlap (allowing small tolerance for audio processing variations)
+      const tolerance = 0.1; // 100ms tolerance
+      const hasOverlap = word.start < lastWord.end + tolerance;
+
+      if (hasOverlap) {
+        // Skip this word as it's likely a duplicate from chunk overlap
+        console.log(
+          `Skipping overlapping word: "${word.word}" at ${word.start}s (overlaps with "${lastWord.word}" ending at ${lastWord.end}s)`
+        );
+      } else {
+        // No overlap, add the word
+        mergedWords.push(word);
+      }
+    }
+  }
+
+  // Generate final text by joining all words
+  const finalText = mergedWords.map((w) => w.word).join(" ");
+
+  return {
+    text: finalText,
+    totalWords: mergedWords.length,
+    words: mergedWords,
+  };
 }

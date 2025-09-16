@@ -363,7 +363,7 @@ app.post("/chunk", async (c) => {
       chunkUploadUrls,
       outputFormat = "mp3",
       bitrate = 32,
-      chunkDuration = 30,
+      chunkDuration = 60,
       overlapDuration = 2,
       streaming = false,
       progressCallbackUrl,
@@ -858,7 +858,7 @@ function chunkAudioWithPresignedUrls(
   chunkUploadUrls,
   outputFormat = "mp3",
   bitrate = 32,
-  chunkDuration = 30,
+  chunkDuration = 60,
   overlapDuration = 2,
   progressCallback,
   duration, // Required: Pre-determined duration

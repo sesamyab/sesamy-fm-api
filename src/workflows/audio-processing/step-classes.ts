@@ -1,4 +1,3 @@
-import { z } from "zod";
 import type { WorkflowStep, Env } from "./types";
 
 // Placeholder step classes for remaining steps - these will need proper implementation

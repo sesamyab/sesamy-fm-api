@@ -37,16 +37,32 @@ export class InitializeWorkflowStep
     const {
       episodeId,
       audioR2Key,
-      chunkDuration = 30,
+      chunkDuration = 60,
       overlapDuration = 2,
       encodingFormats = ["mp3_128"],
       taskId,
-      transcriptionLanguage = "en",
+      transcriptionLanguage = this.env.DEFAULT_TRANSCRIPTION_LANGUAGE || "en",
+      transcriptionModel = this.env.DEFAULT_TRANSCRIPTION_MODEL ||
+        "@cf/deepgram/nova-3",
+      useNova3Features = this.env.USE_NOVA3_FEATURES === "true" || false,
     } = validInput;
 
     if (!episodeId || !audioR2Key) {
-      throw new Error("Episode ID and audio R2 key are required");
+      throw new Error(
+        `Episode ID and audio R2 key are required [Settings: episodeId=${episodeId}, audioR2Key=${
+          audioR2Key ? "provided" : "missing"
+        }, transcriptionLanguage=${transcriptionLanguage}, transcriptionModel=${transcriptionModel}]`
+      );
     }
+
+    // Determine if we're using nova-3 and adjust settings accordingly
+    const isNova3 =
+      transcriptionModel === "@cf/deepgram/nova-3" || useNova3Features;
+    const finalChunkDuration = isNova3 ? 600 : chunkDuration; // 10 minutes (600 seconds) for nova-3
+    const finalOverlapDuration = isNova3 ? 30 : overlapDuration; // Longer overlap for 10-minute chunks
+    const finalTranscriptionModel = isNova3
+      ? "@cf/deepgram/nova-3"
+      : transcriptionModel;
 
     const workflowId = uuidv4();
     const timestamp = new Date().toISOString();
@@ -67,12 +83,14 @@ export class InitializeWorkflowStep
       workflowId,
       episodeId,
       audioR2Key,
-      chunkDuration,
-      overlapDuration,
+      chunkDuration: finalChunkDuration,
+      overlapDuration: finalOverlapDuration,
       encodingFormats,
       startedAt: timestamp,
       taskId,
       transcriptionLanguage,
+      transcriptionModel: finalTranscriptionModel,
+      useNova3Features: isNova3,
       previewDownloadUrl: previewDownloadUrl.url,
       signedUrls: [previewDownloadUrl.url],
     };

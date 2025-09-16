@@ -66,7 +66,7 @@ const WorkflowSearchSchema = z.object({
 const audioProcessingWorkflowSchema = z.object({
   episodeId: z.string().min(1),
   audioR2Key: z.string().min(1),
-  chunkDuration: z.number().int().min(10).max(300).default(30),
+  chunkDuration: z.number().int().min(10).max(300).default(60),
   overlapDuration: z.number().int().min(0).max(10).default(2),
   encodingFormats: z.array(z.string()).default(["mp3_128"]),
   transcriptionLanguage: z.string().optional().default("en"), // Force language to avoid mixed language issues

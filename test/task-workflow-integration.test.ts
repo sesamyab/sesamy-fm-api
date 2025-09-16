@@ -22,21 +22,4 @@ describe("Task-Workflow Integration", () => {
     // This test ensures the type is properly defined
     expect(validTypes).toContain("audio_processing");
   });
-
-  it("should calculate workflow progress correctly", () => {
-    // Test the progress calculation logic
-    const stepProgress = {
-      "initialize-workflow": { progress: 100 },
-      "encode-for-processing": { progress: 100 },
-      "prepare-chunk-storage": { progress: 100 },
-      "audio-chunking": { progress: 50 },
-    };
-
-    // Step weights: initialize(5) + encode(15) + prepare(5) + chunking(15*0.5) = 32.5 out of 100 total
-    // Expected: 32.5% progress
-
-    // This would need to be implemented in WorkflowService
-    // const progress = workflowService.calculateOverallProgress(stepProgress);
-    // expect(progress).toBeCloseTo(32.5, 1);
-  });
 });

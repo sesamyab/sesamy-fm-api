@@ -27,6 +27,7 @@ import { ImageService } from "./images/service";
 import { TaskService } from "./tasks/service";
 import { CampaignRepository } from "./campaigns/repository";
 import { CampaignService } from "./campaigns/service";
+import { CreativeUploadService } from "./campaigns/creative-upload-service";
 
 export function createApp(
   database?: D1Database,
@@ -35,7 +36,6 @@ export function createApp(
   r2SecretAccessKey?: string,
   r2Endpoint?: string,
   ai?: Ai,
-  queue?: Queue,
   encodingContainer?: DurableObjectNamespace,
   audioProcessingWorkflow?: Workflow,
   importShowWorkflow?: Workflow,
@@ -85,6 +85,18 @@ export function createApp(
     eventPublisher
   );
 
+  const creativeUploadService =
+    bucket && r2AccessKeyId && r2SecretAccessKey && r2Endpoint
+      ? new CreativeUploadService(
+          database,
+          bucket,
+          eventPublisher,
+          r2AccessKeyId,
+          r2SecretAccessKey,
+          r2Endpoint
+        )
+      : undefined;
+
   // Global middleware
   app.use("*", cors());
   app.use("*", logger());
@@ -122,6 +134,8 @@ export function createApp(
       { name: "tasks", description: "Background task management" },
       { name: "campaigns", description: "Advertising campaigns management" },
       { name: "creatives", description: "Campaign creatives management" },
+      { name: "tts", description: "Text-to-speech conversion" },
+      { name: "testing", description: "Testing endpoints" },
     ],
   });
 
@@ -145,7 +159,6 @@ export function createApp(
       database,
       bucket,
       ai,
-      queue,
       awsLambdaUrl,
       awsApiKey
     )
@@ -163,11 +176,21 @@ export function createApp(
   app.use("/encoding/*", authMiddleware);
   app.use("/workflows/*", authMiddleware);
   app.use("/campaigns/*", authMiddleware);
+  app.use("/tts/*", authMiddleware);
 
   // Apply auth to transcription routes except /transcription/test
   app.use("/transcription/*", (c, next) => {
     // Skip auth for test endpoint
     if (c.req.path === "/transcription/test") {
+      return next();
+    }
+    return authMiddleware(c, next);
+  });
+
+  // Apply auth to test routes except /test/tts (for easy testing)
+  app.use("/test/*", (c, next) => {
+    // Skip auth for TTS test endpoint
+    if (c.req.path === "/test/tts") {
       return next();
     }
     return authMiddleware(c, next);
@@ -198,14 +221,16 @@ export function createApp(
       database,
       bucket,
       ai,
-      queue,
       awsLambdaUrl,
       awsApiKey
     )
   );
 
   app.route("/", createWorkflowRoutes());
-  app.route("/", createCampaignRoutes(campaignService, audioService));
+  app.route(
+    "/",
+    createCampaignRoutes(campaignService, audioService, creativeUploadService)
+  );
 
   return app;
 }

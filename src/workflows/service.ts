@@ -1,6 +1,6 @@
 import { WorkflowRepository } from "./repository.js";
 import { TaskRepository } from "../tasks/repository.js";
-import type { Workflow, NewWorkflow, Task } from "../database/schema.js";
+import type { Workflow } from "../database/schema.js";
 import { v4 as uuidv4 } from "uuid";
 
 export interface WorkflowProgressUpdate {

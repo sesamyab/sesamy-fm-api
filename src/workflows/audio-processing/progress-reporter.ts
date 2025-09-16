@@ -29,7 +29,7 @@ export class WorkflowProgressReporter {
     }
 
     try {
-      // Make an HTTP request to our own API to update progress
+      // Make an HTTP request to our own API to update task progress
       const baseUrl = this.env.SERVICE_BASE_URL;
       if (!baseUrl) {
         console.warn(
@@ -38,32 +38,63 @@ export class WorkflowProgressReporter {
         return;
       }
 
+      // Update task progress
       const progressPayload = {
-        taskId: parseInt(this.taskId),
-        workflowId: this.workflowId,
-        step,
         progress,
-        message,
-        data,
+        message: message || `${step}: ${progress}%`,
       };
 
-      const response = await fetch(`${baseUrl}/internal/workflow-progress`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(progressPayload),
-      });
+      const progressResponse = await fetch(
+        `${baseUrl}/internal/tasks/${this.taskId}/progress`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(progressPayload),
+        }
+      );
 
-      if (!response.ok) {
+      if (!progressResponse.ok) {
         console.error(
-          `Failed to report workflow progress: ${response.status} ${response.statusText}`
-        );
-      } else {
-        console.log(
-          `Progress reported for step ${step}: ${progress}% (task ${this.taskId})`
+          `Failed to update task progress: ${progressResponse.status} ${progressResponse.statusText}`
         );
       }
+
+      // Update task result with step data if provided
+      if (data) {
+        const resultPayload = {
+          result: {
+            step,
+            progress,
+            message: message || `${step}: ${progress}%`,
+            data,
+            workflowId: this.workflowId,
+            timestamp: new Date().toISOString(),
+          },
+        };
+
+        const resultResponse = await fetch(
+          `${baseUrl}/internal/tasks/${this.taskId}/result`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(resultPayload),
+          }
+        );
+
+        if (!resultResponse.ok) {
+          console.error(
+            `Failed to update task result: ${resultResponse.status} ${resultResponse.statusText}`
+          );
+        }
+      }
+
+      console.log(
+        `Progress reported for step ${step}: ${progress}% (task ${this.taskId})`
+      );
     } catch (error) {
       console.error("Error reporting workflow progress:", error);
     }
@@ -78,6 +109,17 @@ export class WorkflowProgressReporter {
     data?: any
   ): Promise<void> {
     await this.reportStepProgress(step, 100, message, data);
+  }
+
+  /**
+   * Report step completion with result data stored in task
+   */
+  async reportStepCompleteWithResult(
+    step: string,
+    message: string,
+    resultData: any
+  ): Promise<void> {
+    await this.reportStepProgress(step, 100, message, resultData);
   }
 
   /**
@@ -116,7 +158,7 @@ export class WorkflowProgressReporter {
       return undefined;
     }
 
-    return `${this.env.SERVICE_BASE_URL}/internal/workflow-progress`;
+    return `${this.env.SERVICE_BASE_URL}/internal/tasks/${this.taskId}/progress`;
   }
 
   /**
@@ -148,29 +190,60 @@ export class WorkflowProgressReporter {
         return;
       }
 
+      // Update task status
       const statusPayload = {
-        taskId: parseInt(this.taskId),
-        workflowId: this.workflowId,
         status,
         message,
-        data,
       };
 
-      const response = await fetch(`${baseUrl}/internal/workflow-status`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify(statusPayload),
-      });
+      const statusResponse = await fetch(
+        `${baseUrl}/internal/tasks/${this.taskId}/status`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify(statusPayload),
+        }
+      );
 
-      if (!response.ok) {
+      if (!statusResponse.ok) {
         console.error(
-          `Failed to report workflow status: ${response.status} ${response.statusText}`
+          `Failed to update task status: ${statusResponse.status} ${statusResponse.statusText}`
         );
-      } else {
-        console.log(`Status reported: ${status} (task ${this.taskId})`);
       }
+
+      // Update task result with status data if provided
+      if (data) {
+        const resultPayload = {
+          result: {
+            status,
+            message,
+            data,
+            workflowId: this.workflowId,
+            timestamp: new Date().toISOString(),
+          },
+        };
+
+        const resultResponse = await fetch(
+          `${baseUrl}/internal/tasks/${this.taskId}/result`,
+          {
+            method: "PATCH",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify(resultPayload),
+          }
+        );
+
+        if (!resultResponse.ok) {
+          console.error(
+            `Failed to update task result: ${resultResponse.status} ${resultResponse.statusText}`
+          );
+        }
+      }
+
+      console.log(`Status reported: ${status} (task ${this.taskId})`);
     } catch (error) {
       console.error("Error reporting workflow status:", error);
     }

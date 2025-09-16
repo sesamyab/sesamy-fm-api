@@ -1,16 +1,51 @@
-import { generateSignedDownloadUrl } from "../../utils/storage";
-import type {
-  Env,
-  ChunkingResult,
-  AudioMetadata,
-  WorkflowState,
-} from "./types";
+import { v4 as uuidv4 } from "uuid";
+import {
+  generateSignedDownloadUrl,
+  generateSignedUploadUrl,
+} from "../../utils/storage";
+import type { Env, ChunkingResult, EncodedAudio, WorkflowState } from "./types";
 
 export async function audioChunking(
   env: Env,
   workflowState: WorkflowState,
-  audioMetadata: AudioMetadata
+  encodedAudio: EncodedAudio
 ): Promise<ChunkingResult> {
+  // Step 1: Prepare chunk storage (moved from prepare-chunk-storage step)
+  console.log("Preparing chunk storage based on encoded audio duration...");
+
+  // Calculate expected number of chunks using encoded audio duration
+  const totalDuration = encodedAudio.duration;
+  const expectedChunks = Math.ceil(totalDuration / workflowState.chunkDuration);
+
+  // Pre-generate signed PUT URLs for all expected chunks
+  const chunkUploadUrls: Array<{
+    index: number;
+    r2Key: string;
+    uploadUrl: string;
+  }> = [];
+
+  for (let i = 0; i < expectedChunks; i++) {
+    const chunkId = uuidv4();
+    const chunkR2Key = `chunks/${workflowState.episodeId}/${chunkId}.mp3`;
+
+    // Generate a presigned PUT URL for chunk upload
+    const chunkUploadResult = await generateSignedUploadUrl(
+      env,
+      chunkR2Key,
+      "audio/mpeg", // Content-Type for MP3 chunks
+      3600 // 1 hour expiration
+    );
+
+    chunkUploadUrls.push({
+      index: i,
+      r2Key: chunkR2Key,
+      uploadUrl: chunkUploadResult.url,
+    });
+  }
+
+  console.log(`Prepared storage for ${expectedChunks} expected chunks`);
+
+  // Step 2: Perform audio chunking
   // Get a reference to the encoding container
   const containerId = env.ENCODING_CONTAINER.idFromName("encoding-service");
   const container = env.ENCODING_CONTAINER.get(containerId);
@@ -42,13 +77,13 @@ export async function audioChunking(
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          audioUrl: audioMetadata.encodedAudioUrl, // Use encoded file
-          chunkUploadUrls: audioMetadata.chunkUploadUrls,
+          audioUrl: encodedAudio.encodedAudioUrl, // Use encoded file
+          chunkUploadUrls: chunkUploadUrls,
           outputFormat: "mp3", // Use MP3 format for chunks (supported by container)
           bitrate: 48, // Use 48 kbps to match encoding step
           chunkDuration: workflowState.chunkDuration,
           overlapDuration: workflowState.overlapDuration,
-          duration: audioMetadata.duration, // Pass the pre-determined duration
+          duration: totalDuration, // Pass the pre-determined duration
           progressCallbackUrl,
           // Include task and step information for progress tracking
           taskId: workflowState.taskId

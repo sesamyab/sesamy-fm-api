@@ -179,7 +179,19 @@ export const CreativeParamsSchema = z.object({
   creative_id: z.string(),
 });
 
-// Audio upload for creatives
+// Creative upload schemas
+export const CreativeUploadSchema = z.object({
+  id: z.string().uuid(),
+  campaignId: z.string().uuid(),
+  creativeId: z.string().uuid(),
+  fileName: z.string(),
+  fileSize: z.number().int().positive(),
+  mimeType: z.string(),
+  url: z.string().url(),
+  uploadedAt: z.string().datetime(),
+});
+
+// Audio upload for creatives (legacy - kept for backward compatibility)
 export const AudioUploadSchema = z.object({
   fileName: z.string(),
   fileSize: z.number(),
@@ -200,4 +212,5 @@ export type CampaignWithDetails = z.infer<typeof CampaignWithDetailsSchema>;
 export type Pagination = z.infer<typeof PaginationSchema>;
 export type CampaignParams = z.infer<typeof CampaignParamsSchema>;
 export type CreativeParams = z.infer<typeof CreativeParamsSchema>;
+export type CreativeUpload = z.infer<typeof CreativeUploadSchema>;
 export type AudioUpload = z.infer<typeof AudioUploadSchema>;

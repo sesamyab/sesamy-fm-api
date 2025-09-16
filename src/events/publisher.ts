@@ -1,5 +1,4 @@
 import { v4 as uuidv4 } from "uuid";
-import { logger } from "../telemetry-cf";
 import { PodcastEventType } from "./types";
 
 // Edge-compatible CloudEvent interface
@@ -34,22 +33,5 @@ export class EventPublisher {
       data,
       subject,
     };
-
-    // For development, log events. In production, send to message broker
-    logger.info("Event published", {
-      eventType,
-      eventId: event.id,
-      subject,
-      data,
-    });
-
-    // TODO: In production, publish to message broker (e.g., Kafka, RabbitMQ, etc.)
-    // Example:
-    // await this.messageProducer.send({
-    //   topic: eventType,
-    //   messages: [{
-    //     value: JSON.stringify(event),
-    //   }],
-    // });
   }
 }

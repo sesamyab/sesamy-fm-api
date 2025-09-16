@@ -13,9 +13,11 @@ import {
   UpdateCreativeSchema,
   CreativeSchema,
   AudioUploadSchema,
+  CreativeUploadSchema,
 } from "./schemas";
 import { CampaignService } from "./service";
 import { AudioService } from "../audio/service";
+import { CreativeUploadService } from "./creative-upload-service";
 import { requireScopes, hasPermissions, hasScopes } from "../auth/middleware";
 import { NotFoundError } from "../common/errors";
 import { JWTPayload } from "../auth/types";
@@ -478,9 +480,139 @@ const getCampaignShowsRoute = createRoute({
   },
 });
 
+// Upload creative audio route
+const uploadCreativeAudioRoute = createRoute({
+  method: "post",
+  path: "/campaigns/{campaign_id}/creatives/{creative_id}/audio",
+  tags: ["creatives"],
+  summary: "Upload audio file for creative",
+  description: "Upload an audio file for a creative",
+  request: {
+    params: CreativeParamsSchema,
+    body: {
+      content: {
+        "multipart/form-data": {
+          schema: {
+            type: "object",
+            properties: {
+              audio: {
+                type: "string",
+                format: "binary",
+                description: "Audio file to upload",
+              },
+            },
+            required: ["audio"],
+          },
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: {
+        "application/json": {
+          schema: CreativeUploadSchema,
+        },
+      },
+      description: "Audio uploaded successfully",
+    },
+    404: {
+      description: "Creative not found",
+    },
+  },
+  security: [{ Bearer: [] }],
+});
+
+// Upload creative video route
+const uploadCreativeVideoRoute = createRoute({
+  method: "post",
+  path: "/campaigns/{campaign_id}/creatives/{creative_id}/video",
+  tags: ["creatives"],
+  summary: "Upload video file for creative",
+  description: "Upload a video file for a creative",
+  request: {
+    params: CreativeParamsSchema,
+    body: {
+      content: {
+        "multipart/form-data": {
+          schema: {
+            type: "object",
+            properties: {
+              video: {
+                type: "string",
+                format: "binary",
+                description: "Video file to upload",
+              },
+            },
+            required: ["video"],
+          },
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: {
+        "application/json": {
+          schema: CreativeUploadSchema,
+        },
+      },
+      description: "Video uploaded successfully",
+    },
+    404: {
+      description: "Creative not found",
+    },
+  },
+  security: [{ Bearer: [] }],
+});
+
+// Upload creative image route
+const uploadCreativeImageRoute = createRoute({
+  method: "post",
+  path: "/campaigns/{campaign_id}/creatives/{creative_id}/image",
+  tags: ["creatives"],
+  summary: "Upload image file for creative",
+  description: "Upload an image file for a creative",
+  request: {
+    params: CreativeParamsSchema,
+    body: {
+      content: {
+        "multipart/form-data": {
+          schema: {
+            type: "object",
+            properties: {
+              image: {
+                type: "string",
+                format: "binary",
+                description: "Image file to upload",
+              },
+            },
+            required: ["image"],
+          },
+        },
+      },
+    },
+  },
+  responses: {
+    201: {
+      content: {
+        "application/json": {
+          schema: CreativeUploadSchema,
+        },
+      },
+      description: "Image uploaded successfully",
+    },
+    404: {
+      description: "Creative not found",
+    },
+  },
+  security: [{ Bearer: [] }],
+});
+
 export function createCampaignRoutes(
   campaignService: CampaignService,
-  audioService?: AudioService
+  audioService?: AudioService,
+  creativeUploadService?: CreativeUploadService
 ) {
   const app = new OpenAPIHono();
 
@@ -757,6 +889,222 @@ export function createCampaignRoutes(
       throw new HTTPException(500, { message: "Internal server error" });
     }
   });
+
+  // Creative upload routes
+  if (creativeUploadService) {
+    app.openapi(uploadCreativeAudioRoute, async (c) => {
+      // Check auth
+      const payload = c.get("jwtPayload") as JWTPayload;
+      const hasWritePermission = hasPermissions(payload, ["campaigns:write"]);
+      const hasWriteScope = hasScopes(payload, ["campaigns.write"]);
+      if (!hasWritePermission && !hasWriteScope) {
+        const problem = {
+          type: "forbidden",
+          title: "Forbidden",
+          status: 403,
+          detail:
+            "Required permissions: campaigns:write or scope: campaigns.write",
+          instance: c.req.path,
+        };
+        throw new HTTPException(403, { message: JSON.stringify(problem) });
+      }
+
+      const { campaign_id, creative_id } = c.req.valid("param");
+
+      try {
+        // Parse multipart form data
+        const formData = await c.req.formData();
+        const audioFile = formData.get("audio") as File | null;
+
+        if (!audioFile) {
+          const problem = {
+            type: "validation_error",
+            title: "Validation Error",
+            status: 400,
+            detail: "Audio file is required",
+            instance: c.req.path,
+          };
+          throw new HTTPException(400, { message: JSON.stringify(problem) });
+        }
+
+        // Convert File to Buffer
+        const buffer = Buffer.from(await audioFile.arrayBuffer());
+
+        const fileData = {
+          fileName: audioFile.name,
+          fileSize: audioFile.size,
+          mimeType: audioFile.type,
+          buffer,
+        };
+
+        const upload = await creativeUploadService.uploadCreativeAudio(
+          campaign_id,
+          creative_id,
+          fileData
+        );
+        return c.json(upload, 201);
+      } catch (error) {
+        if (error instanceof NotFoundError) {
+          const problem = {
+            type: "not_found",
+            title: "Not Found",
+            status: 404,
+            detail: "Creative not found",
+            instance: c.req.path,
+          };
+          throw new HTTPException(404, { message: JSON.stringify(problem) });
+        }
+
+        // Log the actual error for debugging
+        console.error("Creative audio upload error:", error);
+
+        // Re-throw to let the global error handler deal with it
+        throw error;
+      }
+    });
+
+    app.openapi(uploadCreativeVideoRoute, async (c) => {
+      // Check auth
+      const payload = c.get("jwtPayload") as JWTPayload;
+      const hasWritePermission = hasPermissions(payload, ["campaigns:write"]);
+      const hasWriteScope = hasScopes(payload, ["campaigns.write"]);
+      if (!hasWritePermission && !hasWriteScope) {
+        const problem = {
+          type: "forbidden",
+          title: "Forbidden",
+          status: 403,
+          detail:
+            "Required permissions: campaigns:write or scope: campaigns.write",
+          instance: c.req.path,
+        };
+        throw new HTTPException(403, { message: JSON.stringify(problem) });
+      }
+
+      const { campaign_id, creative_id } = c.req.valid("param");
+
+      try {
+        // Parse multipart form data
+        const formData = await c.req.formData();
+        const videoFile = formData.get("video") as File | null;
+
+        if (!videoFile) {
+          const problem = {
+            type: "validation_error",
+            title: "Validation Error",
+            status: 400,
+            detail: "Video file is required",
+            instance: c.req.path,
+          };
+          throw new HTTPException(400, { message: JSON.stringify(problem) });
+        }
+
+        // Convert File to Buffer
+        const buffer = Buffer.from(await videoFile.arrayBuffer());
+
+        const fileData = {
+          fileName: videoFile.name,
+          fileSize: videoFile.size,
+          mimeType: videoFile.type,
+          buffer,
+        };
+
+        const upload = await creativeUploadService.uploadCreativeVideo(
+          campaign_id,
+          creative_id,
+          fileData
+        );
+        return c.json(upload, 201);
+      } catch (error) {
+        if (error instanceof NotFoundError) {
+          const problem = {
+            type: "not_found",
+            title: "Not Found",
+            status: 404,
+            detail: "Creative not found",
+            instance: c.req.path,
+          };
+          throw new HTTPException(404, { message: JSON.stringify(problem) });
+        }
+
+        // Log the actual error for debugging
+        console.error("Creative video upload error:", error);
+
+        // Re-throw to let the global error handler deal with it
+        throw error;
+      }
+    });
+
+    app.openapi(uploadCreativeImageRoute, async (c) => {
+      // Check auth
+      const payload = c.get("jwtPayload") as JWTPayload;
+      const hasWritePermission = hasPermissions(payload, ["campaigns:write"]);
+      const hasWriteScope = hasScopes(payload, ["campaigns.write"]);
+      if (!hasWritePermission && !hasWriteScope) {
+        const problem = {
+          type: "forbidden",
+          title: "Forbidden",
+          status: 403,
+          detail:
+            "Required permissions: campaigns:write or scope: campaigns.write",
+          instance: c.req.path,
+        };
+        throw new HTTPException(403, { message: JSON.stringify(problem) });
+      }
+
+      const { campaign_id, creative_id } = c.req.valid("param");
+
+      try {
+        // Parse multipart form data
+        const formData = await c.req.formData();
+        const imageFile = formData.get("image") as File | null;
+
+        if (!imageFile) {
+          const problem = {
+            type: "validation_error",
+            title: "Validation Error",
+            status: 400,
+            detail: "Image file is required",
+            instance: c.req.path,
+          };
+          throw new HTTPException(400, { message: JSON.stringify(problem) });
+        }
+
+        // Convert File to Buffer
+        const buffer = Buffer.from(await imageFile.arrayBuffer());
+
+        const fileData = {
+          fileName: imageFile.name,
+          fileSize: imageFile.size,
+          mimeType: imageFile.type,
+          buffer,
+        };
+
+        const upload = await creativeUploadService.uploadCreativeImage(
+          campaign_id,
+          creative_id,
+          fileData
+        );
+        return c.json(upload, 201);
+      } catch (error) {
+        if (error instanceof NotFoundError) {
+          const problem = {
+            type: "not_found",
+            title: "Not Found",
+            status: 404,
+            detail: "Creative not found",
+            instance: c.req.path,
+          };
+          throw new HTTPException(404, { message: JSON.stringify(problem) });
+        }
+
+        // Log the actual error for debugging
+        console.error("Creative image upload error:", error);
+
+        // Re-throw to let the global error handler deal with it
+        throw error;
+      }
+    });
+  }
 
   return app;
 }

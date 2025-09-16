@@ -397,7 +397,7 @@ export class ProcessEpisodeStep
               const audioProcessingParams = {
                 episodeId: episode.id,
                 audioR2Key,
-                chunkDuration: 30,
+                chunkDuration: 60,
                 transcriptionLanguage: "auto", // Auto-detect language
               };
 

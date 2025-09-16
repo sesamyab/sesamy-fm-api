@@ -26,7 +26,7 @@ export async function finalizeProcessing(
     workflowState.overlapDuration
   );
 
-  // Store transcript
+  // Store transcript as text file
   const transcriptId = uuidv4();
   const transcriptKey = `transcripts/${workflowState.episodeId}/${transcriptId}.txt`;
 
@@ -39,20 +39,52 @@ export async function finalizeProcessing(
       episodeId: workflowState.episodeId,
       workflowId: workflowState.workflowId,
       createdAt: new Date().toISOString(),
-      processingMode: "workflow-enhanced",
+      processingMode: "workflow-enhanced-words",
       totalChunks: transcribedChunks.length.toString(),
       totalEncodings: encodings.length.toString(),
+      totalWords: mergedTranscript.totalWords.toString(),
+    },
+  });
+
+  // Store word-level transcript as JSON file for future use
+  const wordsKey = `transcripts/${workflowState.episodeId}/${transcriptId}-words.json`;
+  const wordsData = {
+    episodeId: workflowState.episodeId,
+    workflowId: workflowState.workflowId,
+    createdAt: new Date().toISOString(),
+    totalWords: mergedTranscript.totalWords,
+    words: mergedTranscript.words,
+  };
+
+  await env.BUCKET.put(wordsKey, JSON.stringify(wordsData, null, 2), {
+    httpMetadata: {
+      contentType: "application/json",
+      contentLanguage: "en",
+    },
+    customMetadata: {
+      episodeId: workflowState.episodeId,
+      workflowId: workflowState.workflowId,
+      dataType: "word-timestamps",
     },
   });
 
   const transcriptUrl = `${env.R2_ENDPOINT}/${transcriptKey}`;
 
-  // Update episode with transcript
+  // Update episode with transcript (only if not already set by enhance-transcript step)
   const episodeRepository = new EpisodeRepository(env.DB);
+  const existingEpisode = await episodeRepository.findByIdOnly(
+    workflowState.episodeId
+  );
 
-  await episodeRepository.updateByIdOnly(workflowState.episodeId, {
-    transcriptUrl,
-  });
+  // Only update transcriptUrl if it hasn't been set by the enhance-transcript step
+  if (
+    !existingEpisode?.transcriptUrl ||
+    !existingEpisode.transcriptUrl.includes("-enhanced.json")
+  ) {
+    await episodeRepository.updateByIdOnly(workflowState.episodeId, {
+      transcriptUrl,
+    });
+  }
 
   return {
     transcriptUrl,

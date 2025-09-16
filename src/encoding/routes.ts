@@ -6,7 +6,6 @@ export function createEncodingRoutes(
   database?: D1Database,
   bucket?: R2Bucket,
   ai?: Ai,
-  queue?: Queue,
   awsLambdaUrl?: string,
   awsApiKey?: string
 ) {

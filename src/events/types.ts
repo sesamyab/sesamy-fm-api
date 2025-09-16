@@ -25,4 +25,7 @@ export type PodcastEventType =
   | "campaign.show.removed"
   | "creative.created"
   | "creative.updated"
-  | "creative.deleted";
+  | "creative.deleted"
+  | "creative.audio.uploaded"
+  | "creative.video.uploaded"
+  | "creative.image.uploaded";
