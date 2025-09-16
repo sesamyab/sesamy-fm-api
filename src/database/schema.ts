@@ -79,6 +79,7 @@ export const tasks = sqliteTable("tasks", {
   attempts: integer("attempts").default(0),
   startedAt: text("started_at"), // When task processing actually started
   progress: integer("progress").default(0), // Progress percentage (0-100)
+  step: text("step"), // Current step description (e.g., "2/10 Encoding audio for processing")
   workflowId: text("workflow_id"), // Associated workflow instance ID
   workflowInstanceId: text("workflow_instance_id"), // Cloudflare workflow instance ID
   createdAt: text("created_at").notNull(),
@@ -132,7 +133,8 @@ export const creatives = sqliteTable("creatives", {
   type: text("type", { enum: ["audio", "video", "display"] })
     .notNull()
     .default("audio"),
-  fileUrl: text("file_url"),
+  audioUrl: text("audio_url"),
+  imageUrl: text("image_url"),
   duration: integer("duration"), // Length in seconds
   placementType: text("placement_type", { enum: ["pre", "mid", "post", "any"] })
     .notNull()

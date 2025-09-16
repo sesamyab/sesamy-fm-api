@@ -40,54 +40,10 @@ The following steps still use the legacy function approach but have placeholder 
 - No raw audio data is passed between steps
 - Each step outputs `signedUrls` array for created files
 
-### 4. ✅ Debug REST Endpoints
-
-- Debug routes available at `/wf-debug/audio-processing/{step-name}`
-- Implemented endpoints:
-  - `POST /wf-debug/audio-processing/initialize`
-  - `POST /wf-debug/audio-processing/encode`
-  - `POST /wf-debug/audio-processing/prepare-chunks`
-- Placeholder endpoints for remaining steps
-
-### 5. ✅ Signed Link Outputs
+### 4. ✅ Signed Link Outputs
 
 - Each step returns `signedUrls` array containing URLs to created files
 - Enables easy debugging and manual invocation
-
-## Usage Examples
-
-### Debug Endpoint Usage
-
-#### Initialize Workflow Step
-
-```bash
-curl -X POST http://localhost:8787/wf-debug/audio-processing/initialize \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "episodeId": "episode-123",
-    "audioR2Key": "uploads/audio-file.mp3",
-    "chunkDuration": 60,
-    "transcriptionLanguage": "en"
-  }'
-```
-
-#### Encode for Processing Step
-
-```bash
-curl -X POST http://localhost:8787/wf-debug/audio-processing/encode \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "workflowId": "workflow-uuid",
-    "episodeId": "episode-123",
-    "audioR2Key": "uploads/audio-file.mp3",
-    "chunkDuration": 60,
-    "overlapDuration": 2,
-    "encodingFormats": ["mp3_128"],
-    "startedAt": "2025-09-09T10:00:00.000Z",
-    "transcriptionLanguage": "en",
-    "previewDownloadUrl": "https://signed-url"
-  }'
-```
 
 ### Programmatic Usage
 
@@ -126,27 +82,3 @@ src/workflows/audio-processing/
 ├── finalize-processing.ts      # 🔄 Legacy function
 └── utils.ts                    # Utility functions
 ```
-
-## Next Steps
-
-1. **Convert remaining steps** to class-based approach with Zod validation
-2. **Implement proper debug endpoints** for all steps
-3. **Add comprehensive error handling** and retry logic to step classes
-4. **Document input/output schemas** for each step
-5. **Add integration tests** for the new step-based approach
-
-## Backward Compatibility
-
-- Legacy function exports are maintained for existing code
-- Main workflow continues to work with existing callers
-- New step classes can be adopted incrementally
-- Debug endpoints are optional and can be disabled in production
-
-## Production Deployment
-
-Before production deployment:
-
-1. Comment out debug routes in `routes.ts`
-2. Ensure all steps are converted to class-based approach
-3. Validate error handling and retry logic
-4. Test end-to-end workflow execution

@@ -124,7 +124,7 @@ export class CreativeUploadService {
     try {
       console.log(`Updating creative ${creativeId} with audio URL`);
       await this.campaignRepo.updateCreative(campaignId, creativeId, {
-        fileUrl: url, // Store R2 key, sign on-demand when reading
+        audioUrl: url, // Store R2 key for audio files
         type: "audio", // Ensure type is set to audio
       });
       console.log(`Creative updated successfully`);
@@ -246,7 +246,7 @@ export class CreativeUploadService {
     try {
       console.log(`Updating creative ${creativeId} with video URL`);
       await this.campaignRepo.updateCreative(campaignId, creativeId, {
-        fileUrl: url, // Store R2 key, sign on-demand when reading
+        audioUrl: url, // Store R2 key for video files (treating video as audio content)
         type: "video", // Ensure type is set to video
       });
       console.log(`Creative updated successfully`);
@@ -368,8 +368,7 @@ export class CreativeUploadService {
     try {
       console.log(`Updating creative ${creativeId} with image URL`);
       await this.campaignRepo.updateCreative(campaignId, creativeId, {
-        fileUrl: url, // Store R2 key, sign on-demand when reading
-        type: "display", // Set type to display for image creatives
+        imageUrl: url, // Store R2 key for image files
       });
       console.log(`Creative updated successfully`);
     } catch (error) {
@@ -430,28 +429,47 @@ export class CreativeUploadService {
       throw new NotFoundError("Creative not found");
     }
 
-    let signedUrl = creative.fileUrl;
+    let signedAudioUrl = creative.audioUrl;
+    let signedImageUrl = creative.imageUrl;
 
-    // Generate signed URL if we have an R2 key and the generator is available
+    // Generate signed URL for audio if we have an R2 key and the generator is available
     if (
       this.presignedUrlGenerator &&
-      creative.fileUrl &&
-      creative.fileUrl.startsWith("r2://")
+      creative.audioUrl &&
+      creative.audioUrl.startsWith("r2://")
     ) {
       try {
         const directUrl = this.presignedUrlGenerator.generateDirectUrl(
           "podcast-service-assets",
-          creative.fileUrl.replace("r2://", "")
+          creative.audioUrl.replace("r2://", "")
         );
-        signedUrl = directUrl || creative.fileUrl;
+        signedAudioUrl = directUrl || creative.audioUrl;
       } catch (error) {
-        console.warn("Failed to generate signed URL:", error);
+        console.warn("Failed to generate signed audio URL:", error);
+      }
+    }
+
+    // Generate signed URL for image if we have an R2 key and the generator is available
+    if (
+      this.presignedUrlGenerator &&
+      creative.imageUrl &&
+      creative.imageUrl.startsWith("r2://")
+    ) {
+      try {
+        const directUrl = this.presignedUrlGenerator.generateDirectUrl(
+          "podcast-service-assets",
+          creative.imageUrl.replace("r2://", "")
+        );
+        signedImageUrl = directUrl || creative.imageUrl;
+      } catch (error) {
+        console.warn("Failed to generate signed image URL:", error);
       }
     }
 
     return {
       ...creative,
-      fileUrl: signedUrl,
+      audioUrl: signedAudioUrl,
+      imageUrl: signedImageUrl,
     };
   }
 }

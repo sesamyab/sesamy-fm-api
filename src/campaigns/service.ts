@@ -130,7 +130,6 @@ export class CampaignService {
       campaignId,
       name: data.name,
       type: data.type ?? "audio",
-      fileUrl: data.fileUrl,
       duration: data.duration,
       placementType: data.placementType ?? "any",
       language: data.language ?? null,

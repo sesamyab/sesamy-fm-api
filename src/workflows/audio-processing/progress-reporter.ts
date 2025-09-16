@@ -1,4 +1,6 @@
 import type { Env } from "./types";
+import { TaskService } from "../../tasks/service.js";
+import { TaskRepository } from "../../tasks/repository.js";
 
 /**
  * Helper class for reporting progress from workflow steps back to tasks
@@ -7,11 +9,15 @@ export class WorkflowProgressReporter {
   private env: Env;
   private taskId?: string;
   private workflowId?: string;
+  private taskService: TaskService;
+  private taskRepository: TaskRepository;
 
   constructor(env: Env, taskId?: string, workflowId?: string) {
     this.env = env;
     this.taskId = taskId;
     this.workflowId = workflowId;
+    this.taskService = new TaskService(env.DB);
+    this.taskRepository = new TaskRepository(env.DB);
   }
 
   /**
@@ -29,67 +35,31 @@ export class WorkflowProgressReporter {
     }
 
     try {
-      // Make an HTTP request to our own API to update task progress
-      const baseUrl = this.env.SERVICE_BASE_URL;
-      if (!baseUrl) {
-        console.warn(
-          "SERVICE_BASE_URL not configured, skipping progress update"
-        );
+      const taskIdNum = parseInt(this.taskId);
+      if (isNaN(taskIdNum)) {
+        console.error(`Invalid task ID: ${this.taskId}`);
         return;
       }
 
-      // Update task progress
-      const progressPayload = {
-        progress,
-        message: message || `${step}: ${progress}%`,
-      };
+      const stepMessage = message || `${step}: ${progress}%`;
 
-      const progressResponse = await fetch(
-        `${baseUrl}/internal/tasks/${this.taskId}/progress`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(progressPayload),
-        }
-      );
-
-      if (!progressResponse.ok) {
-        console.error(
-          `Failed to update task progress: ${progressResponse.status} ${progressResponse.statusText}`
-        );
-      }
+      // Update task progress and step using Drizzle directly
+      await this.taskService.updateTaskStep(taskIdNum, stepMessage, progress);
 
       // Update task result with step data if provided
       if (data) {
-        const resultPayload = {
-          result: {
-            step,
-            progress,
-            message: message || `${step}: ${progress}%`,
-            data,
-            workflowId: this.workflowId,
-            timestamp: new Date().toISOString(),
-          },
+        const resultData = {
+          step,
+          progress,
+          message: stepMessage,
+          data,
+          workflowId: this.workflowId,
+          timestamp: new Date().toISOString(),
         };
 
-        const resultResponse = await fetch(
-          `${baseUrl}/internal/tasks/${this.taskId}/result`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(resultPayload),
-          }
-        );
-
-        if (!resultResponse.ok) {
-          console.error(
-            `Failed to update task result: ${resultResponse.status} ${resultResponse.statusText}`
-          );
-        }
+        await this.taskRepository.updateStatus(taskIdNum, "processing", {
+          result: JSON.stringify(resultData),
+        });
       }
 
       console.log(
@@ -150,27 +120,6 @@ export class WorkflowProgressReporter {
   }
 
   /**
-   * Create a progress callback URL that can be used by containers
-   * to report progress back to this workflow
-   */
-  getProgressCallbackUrl(): string | undefined {
-    if (!this.env.SERVICE_BASE_URL || !this.taskId) {
-      return undefined;
-    }
-
-    return `${this.env.SERVICE_BASE_URL}/internal/tasks/${this.taskId}/progress`;
-  }
-
-  /**
-   * Create a progress callback function for containers
-   */
-  createProgressCallback(step: string) {
-    return async (progress: number, additionalData?: any) => {
-      await this.reportStepProgress(step, progress, undefined, additionalData);
-    };
-  }
-
-  /**
    * Report workflow status change
    */
   async reportWorkflowStatus(
@@ -184,64 +133,32 @@ export class WorkflowProgressReporter {
     }
 
     try {
-      const baseUrl = this.env.SERVICE_BASE_URL;
-      if (!baseUrl) {
-        console.warn("SERVICE_BASE_URL not configured, skipping status update");
+      const taskIdNum = parseInt(this.taskId);
+      if (isNaN(taskIdNum)) {
+        console.error(`Invalid task ID: ${this.taskId}`);
         return;
       }
 
-      // Update task status
-      const statusPayload = {
-        status,
-        message,
-      };
-
-      const statusResponse = await fetch(
-        `${baseUrl}/internal/tasks/${this.taskId}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify(statusPayload),
-        }
-      );
-
-      if (!statusResponse.ok) {
-        console.error(
-          `Failed to update task status: ${statusResponse.status} ${statusResponse.statusText}`
-        );
+      // Prepare the update data
+      const updateData: any = {};
+      if (message) {
+        updateData.step = message;
       }
 
       // Update task result with status data if provided
       if (data) {
-        const resultPayload = {
-          result: {
-            status,
-            message,
-            data,
-            workflowId: this.workflowId,
-            timestamp: new Date().toISOString(),
-          },
+        const resultData = {
+          status,
+          message,
+          data,
+          workflowId: this.workflowId,
+          timestamp: new Date().toISOString(),
         };
-
-        const resultResponse = await fetch(
-          `${baseUrl}/internal/tasks/${this.taskId}/result`,
-          {
-            method: "PATCH",
-            headers: {
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify(resultPayload),
-          }
-        );
-
-        if (!resultResponse.ok) {
-          console.error(
-            `Failed to update task result: ${resultResponse.status} ${resultResponse.statusText}`
-          );
-        }
+        updateData.result = JSON.stringify(resultData);
       }
+
+      // Update task status using Drizzle directly
+      await this.taskRepository.updateStatus(taskIdNum, status, updateData);
 
       console.log(`Status reported: ${status} (task ${this.taskId})`);
     } catch (error) {

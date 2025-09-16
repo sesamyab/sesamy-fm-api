@@ -140,6 +140,7 @@ export class TaskService {
     const updates: any = { progress };
     if (message) {
       updates.result = JSON.stringify({ message, progress });
+      updates.step = message; // Also update the step field with the message
     }
     return await this.repository.updateStatus(taskId, "processing", updates);
   }
@@ -273,6 +274,24 @@ export class TaskService {
       }
     } catch (error) {
       console.error("Failed to create import show workflow:", error);
+      throw error;
+    }
+  }
+
+  async updateTaskStep(
+    taskId: number,
+    step: string,
+    progress?: number
+  ): Promise<void> {
+    try {
+      await this.repository.updateStep(taskId, step, progress);
+      console.log(
+        `Task ${taskId} step updated to: ${step}${
+          progress !== undefined ? ` (${progress}%)` : ""
+        }`
+      );
+    } catch (error) {
+      console.error(`Failed to update task ${taskId} step:`, error);
       throw error;
     }
   }

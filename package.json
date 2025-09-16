@@ -33,6 +33,7 @@
   "license": "MIT",
   "dependencies": {
     "@cloudflare/containers": "^0.0.28",
+    "@hono/node-server": "^1.19.2",
     "@hono/swagger-ui": "^0.4.1",
     "@hono/zod-openapi": "^0.16.4",
     "aws4fetch": "^1.0.20",

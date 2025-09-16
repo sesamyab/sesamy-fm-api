@@ -58,8 +58,8 @@ export class InitializeWorkflowStep
     // Determine if we're using nova-3 and adjust settings accordingly
     const isNova3 =
       transcriptionModel === "@cf/deepgram/nova-3" || useNova3Features;
-    const finalChunkDuration = isNova3 ? 600 : chunkDuration; // 10 minutes (600 seconds) for nova-3
-    const finalOverlapDuration = isNova3 ? 30 : overlapDuration; // Longer overlap for 10-minute chunks
+    const finalChunkDuration = isNova3 ? 60 : chunkDuration; // 1 minute (60 seconds) for nova-3
+    const finalOverlapDuration = isNova3 ? 2 : overlapDuration; // Standard overlap for 1-minute chunks
     const finalTranscriptionModel = isNova3
       ? "@cf/deepgram/nova-3"
       : transcriptionModel;

@@ -22,37 +22,41 @@ import { requireScopes, hasPermissions, hasScopes } from "../auth/middleware";
 import { NotFoundError } from "../common/errors";
 import { JWTPayload } from "../auth/types";
 
-// Utility function to sign audio URLs in creatives
-async function signAudioUrlInCreative(
-  creative: any,
-  audioService?: AudioService
-) {
-  if (
-    !creative.fileUrl ||
-    !creative.fileUrl.startsWith("r2://") ||
-    !audioService
-  ) {
-    return creative;
+// Utility function to sign URLs in creatives
+async function signUrlsInCreative(creative: any, audioService?: AudioService) {
+  const result = { ...creative };
+
+  if (!audioService) {
+    return result;
   }
 
-  try {
-    // Extract the R2 key from the r2:// URL
-    const r2Key = creative.fileUrl.replace("r2://", "");
-
-    // Generate a fresh pre-signed URL
-    const signedUrl = await audioService.generateSignedUrlFromKey(r2Key);
-
-    if (signedUrl) {
-      return {
-        ...creative,
-        fileUrl: signedUrl,
-      };
+  // Sign audio URL if present
+  if (creative.audioUrl && creative.audioUrl.startsWith("r2://")) {
+    try {
+      const r2Key = creative.audioUrl.replace("r2://", "");
+      const signedUrl = await audioService.generateSignedUrlFromKey(r2Key);
+      if (signedUrl) {
+        result.audioUrl = signedUrl;
+      }
+    } catch (error) {
+      console.warn("Failed to sign audioUrl for creative:", creative.id, error);
     }
-  } catch (error) {
-    console.warn("Failed to sign fileUrl for creative:", creative.id, error);
   }
 
-  return creative;
+  // Sign image URL if present
+  if (creative.imageUrl && creative.imageUrl.startsWith("r2://")) {
+    try {
+      const r2Key = creative.imageUrl.replace("r2://", "");
+      const signedUrl = await audioService.generateSignedUrlFromKey(r2Key);
+      if (signedUrl) {
+        result.imageUrl = signedUrl;
+      }
+    } catch (error) {
+      console.warn("Failed to sign imageUrl for creative:", creative.id, error);
+    }
+  }
+
+  return result;
 }
 
 // Get campaigns
@@ -643,11 +647,11 @@ export function createCampaignRoutes(
         throw new HTTPException(404, { message: "Campaign not found" });
       }
 
-      // Sign audio URLs in creatives if audioService is available
+      // Sign URLs in creatives if audioService is available
       if (audioService && campaign.creatives) {
         campaign.creatives = await Promise.all(
           campaign.creatives.map((creative) =>
-            signAudioUrlInCreative(creative, audioService)
+            signUrlsInCreative(creative, audioService)
           )
         );
       }
@@ -735,7 +739,7 @@ export function createCampaignRoutes(
       const signedCreatives = audioService
         ? await Promise.all(
             creatives.map((creative) =>
-              signAudioUrlInCreative(creative, audioService)
+              signUrlsInCreative(creative, audioService)
             )
           )
         : creatives;
@@ -757,9 +761,9 @@ export function createCampaignRoutes(
     try {
       const creative = await campaignService.createCreative(campaign_id, body);
 
-      // Sign audio URL if audioService is available
+      // Sign URLs if audioService is available
       const signedCreative = audioService
-        ? await signAudioUrlInCreative(creative, audioService)
+        ? await signUrlsInCreative(creative, audioService)
         : creative;
 
       return c.json(signedCreative, 201);
@@ -784,9 +788,9 @@ export function createCampaignRoutes(
         throw new HTTPException(404, { message: "Creative not found" });
       }
 
-      // Sign audio URL if audioService is available
+      // Sign URLs if audioService is available
       const signedCreative = audioService
-        ? await signAudioUrlInCreative(creative, audioService)
+        ? await signUrlsInCreative(creative, audioService)
         : creative;
 
       return c.json(signedCreative, 200);
@@ -812,7 +816,7 @@ export function createCampaignRoutes(
 
       // Sign audio URL if audioService is available
       const signedCreative = audioService
-        ? await signAudioUrlInCreative(creative, audioService)
+        ? await signUrlsInCreative(creative, audioService)
         : creative;
 
       return c.json(signedCreative, 200);
@@ -838,7 +842,7 @@ export function createCampaignRoutes(
 
       // Sign audio URL if audioService is available
       const signedCreative = audioService
-        ? await signAudioUrlInCreative(creative, audioService)
+        ? await signUrlsInCreative(creative, audioService)
         : creative;
 
       return c.json(signedCreative, 200);

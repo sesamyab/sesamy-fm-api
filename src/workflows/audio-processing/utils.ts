@@ -54,17 +54,6 @@ export async function processEncodingFormats(
       const timeoutId = setTimeout(() => controller.abort(), 5 * 60 * 1000); // 5 minute timeout
 
       try {
-        console.log(
-          `Encoding attempt ${attempt} for format ${format} (${Math.round(
-            (Date.now() - startTime) / 1000
-          )}s elapsed)`
-        );
-
-        // Generate progress callback URL for this encoding
-        const progressCallbackUrl = env.SERVICE_BASE_URL
-          ? `${env.SERVICE_BASE_URL}/internal/encoding-progress`
-          : undefined;
-
         const response = await container.fetch("http://localhost:8080/encode", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -73,11 +62,7 @@ export async function processEncodingFormats(
             uploadUrl: uploadResult.url,
             outputFormat: codec,
             bitrate,
-            progressCallbackUrl,
             streaming: false, // Keep false for now, can be made configurable later
-            // Include task and step information for progress tracking
-            taskId: taskId,
-            step: `encoding_${format}`,
           }),
           signal: controller.signal,
         });

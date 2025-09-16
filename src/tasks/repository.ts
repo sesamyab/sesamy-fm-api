@@ -99,6 +99,7 @@ export class TaskRepository {
       attempts?: number;
       startedAt?: string;
       progress?: number;
+      step?: string;
     } = {}
   ): Promise<Task | null> {
     const now = new Date().toISOString();
@@ -172,6 +173,7 @@ export class TaskRepository {
         error: null,
         result: null,
         progress: 0,
+        step: null,
         startedAt: null,
         updatedAt: now,
       })
@@ -190,6 +192,31 @@ export class TaskRepository {
         progress,
         updatedAt: now,
       })
+      .where(eq(tasks.id, id))
+      .returning();
+
+    return result[0] || null;
+  }
+
+  async updateStep(
+    id: number,
+    step: string,
+    progress?: number
+  ): Promise<Task | null> {
+    const now = new Date().toISOString();
+
+    const updateData: any = {
+      step,
+      updatedAt: now,
+    };
+
+    if (progress !== undefined) {
+      updateData.progress = progress;
+    }
+
+    const result = await this.db
+      .update(tasks)
+      .set(updateData)
       .where(eq(tasks.id, id))
       .returning();
 

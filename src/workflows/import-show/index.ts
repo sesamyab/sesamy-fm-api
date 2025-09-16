@@ -19,8 +19,6 @@ export class ImportShowWorkflow extends WorkflowEntrypoint<
   Env,
   ImportShowParams
 > {
-  private readonly totalSteps = 3; // RSS parsing + Show creation + Episodes processing
-
   private async updateWorkflowStatus(
     taskId?: string,
     status?: string,
@@ -29,28 +27,29 @@ export class ImportShowWorkflow extends WorkflowEntrypoint<
     if (!taskId) return;
 
     try {
-      const baseUrl = this.env.SERVICE_BASE_URL;
-      if (!baseUrl) {
-        console.warn("SERVICE_BASE_URL not configured, skipping status update");
+      const taskIdNum = parseInt(taskId);
+      if (isNaN(taskIdNum)) {
+        console.error(`Invalid task ID: ${taskId}`);
         return;
       }
 
-      const response = await fetch(
-        `${baseUrl}/internal/tasks/${taskId}/status`,
-        {
-          method: "PATCH",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            status,
-            progress: message,
-          }),
-        }
-      );
+      const { TaskService } = await import("../../tasks/service.js");
+      const taskService = new TaskService(this.env.DB);
 
-      if (!response.ok) {
-        console.warn(`Failed to update task status: ${response.status}`);
+      // Update both status and step message
+      if (status && message) {
+        await taskService.updateTaskStep(taskIdNum, message);
+        const { TaskRepository } = await import("../../tasks/repository.js");
+        const taskRepository = new TaskRepository(this.env.DB);
+        await taskRepository.updateStatus(taskIdNum, status, {
+          step: message,
+        });
+      } else if (status) {
+        const { TaskRepository } = await import("../../tasks/repository.js");
+        const taskRepository = new TaskRepository(this.env.DB);
+        await taskRepository.updateStatus(taskIdNum, status);
+      } else if (message) {
+        await taskService.updateTaskStep(taskIdNum, message);
       }
     } catch (error) {
       console.warn("Failed to update task status:", error);
@@ -75,7 +74,6 @@ export class ImportShowWorkflow extends WorkflowEntrypoint<
 
     try {
       // Step 1: Validate and parse RSS
-      console.log("Step 1: Parsing RSS feed");
       const parseStep = new ValidateAndParseRSSStep(this.env);
       const parseResult = await step.do("parse-rss", async () => {
         return await parseStep.execute({
@@ -91,7 +89,6 @@ export class ImportShowWorkflow extends WorkflowEntrypoint<
       );
 
       // Step 2: Create show
-      console.log("Step 2: Creating show");
       const createShowStep = new CreateShowStep(this.env);
       const showResult = await step.do("create-show", async () => {
         return await createShowStep.execute({
@@ -111,7 +108,6 @@ export class ImportShowWorkflow extends WorkflowEntrypoint<
       );
 
       // Step 3: Process episodes (as separate steps for each episode)
-      console.log("Step 3: Processing episodes");
       const episodes = parseResult.parsedRSS.episodes.slice(
         0,
         params.maxEpisodes
@@ -120,10 +116,6 @@ export class ImportShowWorkflow extends WorkflowEntrypoint<
 
       for (let i = 0; i < episodes.length; i++) {
         const episode = episodes[i];
-
-        console.log(
-          `Processing episode ${i + 1}/${episodes.length}: ${episode.title}`
-        );
 
         const processEpisodeStep = new ProcessEpisodeStep(this.env);
         const episodeResult = await step.do(
@@ -166,8 +158,6 @@ export class ImportShowWorkflow extends WorkflowEntrypoint<
         `Successfully imported show "${showResult.title}" with ${episodeResults.length} episodes`
       );
 
-      console.log("Import-show workflow completed successfully");
-
       return {
         success: true,
         showId: showResult.showId,
@@ -176,8 +166,6 @@ export class ImportShowWorkflow extends WorkflowEntrypoint<
         episodes: episodeResults,
       };
     } catch (error) {
-      console.error("Import-show workflow failed:", error);
-
       await this.updateWorkflowStatus(
         params.taskId,
         "failed",

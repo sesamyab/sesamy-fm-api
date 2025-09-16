@@ -144,10 +144,9 @@ app.post("/encode", async (c) => {
       uploadUrl,
       outputFormat = "mp3",
       bitrate = 128,
+      channels,
+      sampleRate,
       streaming = false,
-      progressCallbackUrl,
-      taskId,
-      step,
     } = await c.req.json();
 
     if (!audioUrl) {
@@ -174,37 +173,6 @@ app.post("/encode", async (c) => {
       `Encoding with direct upload: ${audioUrl} -> ${outputFormat} at ${bitrate}kbps`
     );
 
-    // Set up progress callback if URL provided
-    let progressCallback = null;
-    if (progressCallbackUrl) {
-      progressCallback = async (progress) => {
-        // Check if client is still connected
-        if (!connectionInfo.connected || connectionInfo.aborted) {
-          console.log(
-            `[JOB_${jobId}] Client disconnected, skipping progress update`
-          );
-          return false; // Signal to abort encoding
-        }
-
-        try {
-          await fetch(progressCallbackUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              jobId,
-              progress,
-              timestamp: new Date().toISOString(),
-              taskId: taskId,
-              step: step,
-            }),
-            signal: AbortSignal.timeout(5000), // 5 second timeout
-          });
-        } catch (error) {
-          console.error(`[JOB_${jobId}] Progress callback failed:`, error);
-        }
-      };
-    }
-
     if (streaming) {
       // Set headers for Server-Sent Events (SSE)
       c.header("Content-Type", "text/event-stream");
@@ -221,30 +189,9 @@ app.post("/encode", async (c) => {
         uploadUrl,
         outputFormat,
         bitrate,
-        async (progress) => {
-          // Check connection before sending progress
-          if (!connectionInfo.connected || connectionInfo.aborted) {
-            console.log(
-              `[JOB_${jobId}] Client disconnected during streaming, aborting`
-            );
-            return false;
-          }
-
-          try {
-            await writer.write(`data: ${JSON.stringify({ progress })}\n\n`);
-            // Also call the external progress callback if provided
-            if (progressCallback) {
-              await progressCallback(progress);
-            }
-          } catch (error) {
-            console.log(
-              `[JOB_${jobId}] Stream write failed, client likely disconnected`
-            );
-            connectionInfo.connected = false;
-            return false;
-          }
-        },
-        connectionInfo // Pass connection info for disconnection detection
+        connectionInfo, // Pass connection info for disconnection detection
+        channels,
+        sampleRate
       )
         .then(async (result) => {
           if (connectionInfo.connected) {
@@ -279,8 +226,9 @@ app.post("/encode", async (c) => {
         uploadUrl,
         outputFormat,
         bitrate,
-        progressCallback,
-        connectionInfo
+        connectionInfo,
+        channels,
+        sampleRate
       );
 
       return c.json({
@@ -361,14 +309,9 @@ app.post("/chunk", async (c) => {
     const {
       audioUrl,
       chunkUploadUrls,
-      outputFormat = "mp3",
-      bitrate = 32,
       chunkDuration = 60,
       overlapDuration = 2,
       streaming = false,
-      progressCallbackUrl,
-      taskId,
-      step,
       duration, // Required: Pre-determined duration to avoid ffprobe call
     } = await c.req.json();
 
@@ -406,48 +349,13 @@ app.post("/chunk", async (c) => {
       `Chunking audio with pre-signed URLs: ${audioUrl} -> ${chunkUploadUrls.length} chunks`
     );
 
-    // Set up progress callback if URL provided
-    let progressCallback = null;
-    if (progressCallbackUrl) {
-      progressCallback = async (progress, chunkIndex) => {
-        // Check if client is still connected
-        if (!connectionInfo.connected || connectionInfo.aborted) {
-          console.log(
-            `[JOB_${jobId}] Client disconnected, skipping progress update`
-          );
-          return false; // Signal to abort chunking
-        }
-
-        try {
-          await fetch(progressCallbackUrl, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              jobId,
-              progress,
-              chunkIndex,
-              timestamp: new Date().toISOString(),
-              taskId: taskId,
-              step: step,
-            }),
-            signal: AbortSignal.timeout(5000), // 5 second timeout
-          });
-        } catch (error) {
-          console.error(`[JOB_${jobId}] Progress callback failed:`, error);
-        }
-      };
-    }
-
     if (streaming) {
       // Simplified for Hono - full SSE would need custom handling
       const result = await chunkAudioWithPresignedUrls(
         audioUrl,
         chunkUploadUrls,
-        outputFormat,
-        bitrate,
         chunkDuration,
         overlapDuration,
-        progressCallback,
         duration,
         connectionInfo
       );
@@ -460,11 +368,8 @@ app.post("/chunk", async (c) => {
       const result = await chunkAudioWithPresignedUrls(
         audioUrl,
         chunkUploadUrls,
-        outputFormat,
-        bitrate,
         chunkDuration,
         overlapDuration,
-        progressCallback,
         duration,
         connectionInfo
       );
@@ -627,8 +532,9 @@ function encodeAndUpload(
   uploadUrl,
   outputFormat = "mp3",
   bitrate = 128,
-  progressCallback,
-  connectionInfo = null
+  connectionInfo = null,
+  requestedChannels = null,
+  requestedSampleRate = null
 ) {
   return new Promise(async (resolve, reject) => {
     try {
@@ -658,6 +564,12 @@ function encodeAndUpload(
         audioProps.sampleRate = 44100;
       }
 
+      // Use requested parameters if provided, otherwise use calculated defaults
+      const targetSampleRate =
+        requestedSampleRate || (audioProps.sampleRate > 48000 ? 48000 : 44100);
+      const targetChannels =
+        requestedChannels || Math.min(Math.max(audioProps.channels, 1), 2); // Clamp to 1-2 channels
+
       // Adjust bitrate based on channel count if not explicitly overridden
       let adjustedBitrate = bitrate;
       if (outputFormat === "mp3") {
@@ -666,13 +578,19 @@ function encodeAndUpload(
           // Only adjust if using default bitrate
           adjustedBitrate = audioProps.isMono ? 64 : 128;
         }
+      } else if (outputFormat === "opus") {
+        // Opus is efficient at low bitrates, especially for speech
+        // For processing purposes, we can use very low bitrates
+        if (targetChannels === 1) {
+          // Mono: good quality for speech at 24-32k
+          adjustedBitrate = Math.max(bitrate, 16); // Minimum 16k for Opus
+        } else {
+          // Stereo: 48-64k is usually sufficient
+          adjustedBitrate = Math.max(bitrate, 32);
+        }
       }
 
       const tempOutputFile = `/tmp/encode_${uuidv4()}.${outputFormat}`;
-
-      // Use target sample rate instead of input sample rate for more predictable output
-      const targetSampleRate = audioProps.sampleRate > 48000 ? 48000 : 44100;
-      const targetChannels = Math.min(Math.max(audioProps.channels, 1), 2); // Clamp to 1-2 channels
 
       console.log(
         `FFmpeg encoding: ${inputUrl} -> ${outputFormat} at ${adjustedBitrate}k`
@@ -706,40 +624,24 @@ function encodeAndUpload(
             `-ar ${targetSampleRate}`,
             `-b:a ${adjustedBitrate}k`,
           ]);
+      } else if (outputFormat === "opus") {
+        command = command
+          .audioCodec("libopus")
+          .audioChannels(targetChannels)
+          .audioFrequency(targetSampleRate)
+          .audioBitrate(adjustedBitrate)
+          .outputOptions([
+            `-ac ${targetChannels}`,
+            `-ar ${targetSampleRate}`,
+            `-b:a ${adjustedBitrate}k`,
+            "-vbr",
+            "on", // Enable variable bitrate for better quality
+            "-compression_level",
+            "10", // Maximum compression efficiency
+          ]);
       }
 
-      // Add progress tracking if callback provided
-      if (progressCallback && audioProps.duration) {
-        command = command.on("progress", async (progress) => {
-          if (progress.percent && progress.percent > 0) {
-            const progressValue = Math.min(Math.round(progress.percent), 99);
-
-            // Call progress callback and check if encoding should continue
-            const shouldContinue = await progressCallback(progressValue);
-
-            // If callback returns false, abort the encoding
-            if (shouldContinue === false) {
-              console.log("Encoding aborted due to client disconnection");
-              command.kill("SIGTERM"); // Gracefully kill ffmpeg
-              if (connectionInfo) {
-                connectionInfo.aborted = true;
-              }
-              return;
-            }
-
-            // Also check connection info if provided
-            if (
-              connectionInfo &&
-              (!connectionInfo.connected || connectionInfo.aborted)
-            ) {
-              console.log("Encoding aborted - connection lost");
-              command.kill("SIGTERM");
-              connectionInfo.aborted = true;
-              return;
-            }
-          }
-        });
-      }
+      // Progress tracking removed
 
       // Add debugging to see the actual FFmpeg command
       command.on("start", (commandLine) => {
@@ -778,19 +680,22 @@ function encodeAndUpload(
 
             // Upload to R2 using the pre-signed URL
             console.log(`Uploading to URL: ${uploadUrl.substring(0, 100)}...`);
-            console.log(
-              `Content-Type: ${
-                outputFormat === "mp3" ? "audio/mpeg" : "audio/aac"
-              }`
-            );
+            const contentType =
+              outputFormat === "mp3"
+                ? "audio/mpeg"
+                : outputFormat === "aac"
+                ? "audio/aac"
+                : outputFormat === "opus"
+                ? "audio/opus"
+                : "audio/mpeg";
+            console.log(`Content-Type: ${contentType}`);
             console.log(`Body size: ${encodedData.length} bytes`);
 
             const uploadResponse = await fetch(uploadUrl, {
               method: "PUT",
               body: encodedData,
               headers: {
-                "Content-Type":
-                  outputFormat === "mp3" ? "audio/mpeg" : "audio/aac",
+                "Content-Type": contentType,
                 // Don't set Content-Length - let fetch handle it automatically
               },
             });
@@ -811,10 +716,6 @@ function encodeAndUpload(
             }
 
             console.log(`Successfully uploaded encoded file to R2`);
-
-            if (progressCallback) {
-              progressCallback(100); // Final progress
-            }
 
             resolve({
               success: true,
@@ -856,12 +757,9 @@ function encodeAndUpload(
 function chunkAudioWithPresignedUrls(
   inputUrl,
   chunkUploadUrls,
-  outputFormat = "mp3",
-  bitrate = 32,
   chunkDuration = 60,
   overlapDuration = 2,
-  progressCallback,
-  duration, // Required: Pre-determined duration
+  duration,
   connectionInfo = null
 ) {
   return new Promise(async (resolve, reject) => {
@@ -914,31 +812,13 @@ function chunkAudioWithPresignedUrls(
         );
 
         return new Promise((chunkResolve, chunkReject) => {
-          const tempOutputFile = `/tmp/chunk_${
-            chunk.index
-          }_${uuidv4()}.${outputFormat}`;
+          // Use .ogg extension for Opus files (Opus is stored in OGG container)
+          const tempOutputFile = `/tmp/chunk_${chunk.index}_${uuidv4()}.ogg`;
 
           const command = ffmpeg(inputUrl)
             .seekInput(chunk.startTime)
             .duration(chunk.duration)
-            .format(outputFormat);
-
-          // Set audio parameters for transcription
-          if (outputFormat === "mp3") {
-            command
-              .audioCodec("libmp3lame")
-              .audioChannels(1) // Force mono for transcription
-              .audioFrequency(16000) // Sample rate suitable for transcription
-              .audioBitrate(bitrate)
-              .outputOptions(["-ac 1", "-ar 16000", `-b:a ${bitrate}k`]);
-          } else if (outputFormat === "aac") {
-            command
-              .audioCodec("aac")
-              .audioChannels(1)
-              .audioFrequency(16000)
-              .audioBitrate(bitrate)
-              .outputOptions(["-ac 1", "-ar 16000", `-b:a ${bitrate}k`]);
-          }
+            .outputOptions(["-c", "copy"]); // Use stream copy - no re-encoding
 
           command
             .save(tempOutputFile)
@@ -952,8 +832,7 @@ function chunkAudioWithPresignedUrls(
                   method: "PUT",
                   body: audioData,
                   headers: {
-                    "Content-Type":
-                      outputFormat === "mp3" ? "audio/mpeg" : "audio/aac",
+                    "Content-Type": "audio/ogg", // Opus files are stored in OGG container
                     // Don't set Content-Length - let fetch handle it automatically
                   },
                 });
@@ -973,31 +852,13 @@ function chunkAudioWithPresignedUrls(
                   ...chunk,
                   chunkId: `chunk_${chunk.index}`,
                   metadata: {
-                    format: outputFormat,
-                    bitrate: bitrate,
+                    format: "opus", // Stream copied from input
                     size: stats.size,
-                    channels: 1,
-                    sampleRate: 16000,
+                    // Note: bitrate, channels, sampleRate preserved from original
                   },
                 });
 
-                // Update overall progress
-                if (progressCallback) {
-                  const overallProgress = Math.round(
-                    ((chunk.index + 1) / chunks.length) * 100
-                  );
-                  const shouldContinue = await progressCallback(
-                    overallProgress,
-                    chunk.index
-                  );
-
-                  // Check if the client wants us to stop
-                  if (shouldContinue === false) {
-                    throw new Error(
-                      `Chunking aborted at chunk ${chunk.index} due to client disconnection`
-                    );
-                  }
-                }
+                // Progress tracking removed
               } catch (error) {
                 // Clean up temp file on error
                 try {

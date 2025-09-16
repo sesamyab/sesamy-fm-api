@@ -8,12 +8,9 @@ import {
 import type { Env, AudioProcessingParams } from "./types";
 import { AudioProcessingParamsSchema } from "./types";
 
-// Import new step classes
 import { InitializeWorkflowStep } from "./initialize-workflow";
-import { EncodeForProcessingStep } from "./encode-for-processing";
+import { encodeAudioForTTS } from "./tts-encode";
 import { WorkflowProgressReporter } from "./progress-reporter";
-
-// Import legacy functions for backward compatibility
 import { audioChunking } from "./audio-chunking";
 import { transcribeChunks } from "./transcribe-chunks";
 import { enhanceTranscript } from "./enhance-transcript";
@@ -62,7 +59,7 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
     if (!taskId) return;
 
     const progress = Math.round((stepNumber / this.totalSteps) * 100);
-    const message = `${stepNumber}/${this.totalSteps} ${description}`;
+    const stepMessage = `${stepNumber}/${this.totalSteps} ${description}`;
 
     try {
       const taskIdNum = parseInt(taskId);
@@ -74,8 +71,8 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
       const { TaskService } = await import("../../tasks/service.js");
       const taskService = new TaskService(this.env.DB);
 
-      // Update progress
-      await taskService.updateTaskProgress(taskIdNum, progress, message);
+      // Update step and progress
+      await taskService.updateTaskStep(taskIdNum, stepMessage, progress);
 
       // Update result if data is provided
       if (data) {
@@ -83,7 +80,7 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
           step: stepNumber,
           description,
           progress,
-          message,
+          stepMessage,
           data,
           timestamp: new Date().toISOString(),
         });
@@ -223,10 +220,10 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
         return legacyResult;
       });
 
-      // Step 2: Encode audio to 24 kbps Opus mono for efficient processing
-      currentStep = "encode-for-processing";
+      // Step 2: Encode audio to mp3
+      currentStep = "encode";
       let encodedAudio = await step.do(
-        "encode-for-processing",
+        "encode",
         {
           retries: {
             limit: 2,
@@ -237,21 +234,20 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
         async () => {
           await this.updateStepProgress(
             2,
-            "Encoding audio for processing",
+            "Encoding audio",
             validatedParams.taskId
           );
           await progressReporter.reportStepProgress(
-            "encode-for-processing",
+            "encode-for-tts",
             0,
-            "2/10 Encoding audio for processing"
+            "2/10 Encoding audio for TTS"
           );
 
-          const encodeStep = new EncodeForProcessingStep(this.env);
-          const result = await encodeStep.execute(workflowState);
+          const result = await encodeAudioForTTS(this.env, workflowState);
 
           await progressReporter.reportStepComplete(
-            "encode-for-processing",
-            "Audio encoded for processing"
+            "encode",
+            "Encode audio for TTS"
           );
 
           // Return legacy format for backward compatibility
@@ -627,7 +623,7 @@ export * from "./types";
 
 // Export new step classes
 export { InitializeWorkflowStep } from "./initialize-workflow";
-export { EncodeForProcessingStep } from "./encode-for-processing";
+export { encodeAudioForTTS } from "./tts-encode";
 export { WorkflowProgressReporter } from "./progress-reporter";
 
 // Export utility functions
