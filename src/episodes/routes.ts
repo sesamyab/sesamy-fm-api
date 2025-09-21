@@ -457,8 +457,25 @@ export function registerEpisodeRoutes(
     const { show_id } = c.req.valid("param");
     const episodeData = c.req.valid("json");
 
+    // Get organization ID from JWT (payload already declared above)
+    const organizationId = payload.org_id;
+    if (!organizationId) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Organization context required. Please select an organization.",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
     try {
-      const episode = await episodeService.createEpisode(show_id, episodeData);
+      const episode = await episodeService.createEpisode(
+        show_id,
+        episodeData,
+        organizationId
+      );
 
       // Sign URLs if they have r2:// URLs
       let signedEpisode = await signAudioUrlInEpisode(episode, audioService);

@@ -28,6 +28,10 @@ interface CloudflareEnv {
   AWS_LAMBDA_ENCODING_URL?: string;
   AWS_LAMBDA_API_KEY?: string;
   ENCODING_SERVICE_PROVIDER?: string;
+  // Auth0 configuration
+  AUTH0_DOMAIN?: string;
+  AUTH0_CLIENT_ID?: string;
+  AUTH0_CLIENT_SECRET?: string;
   // TTS configuration
   TTS_DEFAULT_MODEL?: string;
   TTS_DEFAULT_VOICE?: string;
@@ -51,7 +55,10 @@ export default {
       env.AUDIO_PROCESSING_WORKFLOW,
       env.IMPORT_SHOW_WORKFLOW,
       env.AWS_LAMBDA_ENCODING_URL,
-      env.AWS_LAMBDA_API_KEY
+      env.AWS_LAMBDA_API_KEY,
+      env.AUTH0_DOMAIN,
+      env.AUTH0_CLIENT_ID,
+      env.AUTH0_CLIENT_SECRET
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;

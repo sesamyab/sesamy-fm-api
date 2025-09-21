@@ -95,10 +95,20 @@ async function jwkToPem(jwk: any): Promise<string> {
   }
 }
 
-export const authMiddleware = createMiddleware(async (c, next) => {
+/**
+ * Basic JWT verification middleware - only validates JWT token
+ * Used for endpoints that only need a valid user token (like organizations)
+ */
+export const jwtMiddleware = createMiddleware(async (c, next) => {
+  console.log("jwtMiddleware: Starting authentication for path:", c.req.path);
   const authHeader = c.req.header("Authorization");
+  console.log(
+    "jwtMiddleware: Authorization header:",
+    authHeader ? "Present" : "Missing"
+  );
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
+    console.log("jwtMiddleware: Missing or invalid authorization header");
     const problem = {
       type: "unauthorized",
       title: "Unauthorized",
@@ -110,10 +120,12 @@ export const authMiddleware = createMiddleware(async (c, next) => {
   }
 
   const token = authHeader.substring(7); // Remove "Bearer " prefix
+  console.log("jwtMiddleware: Token extracted, length:", token.length);
 
   try {
     // First, decode the token to get the header (including kid)
     const { header } = decode(token);
+    console.log("jwtMiddleware: Token decoded, kid:", header.kid);
 
     if (!header.kid) {
       throw new Error("Token missing key ID (kid)");
@@ -121,16 +133,21 @@ export const authMiddleware = createMiddleware(async (c, next) => {
 
     // Get the public key for verification
     const publicKey = await getPublicKey(header.kid);
+    console.log("jwtMiddleware: Public key retrieved");
 
     // Verify the token
     const payload = await verify(token, publicKey, header.alg || "RS256");
+    console.log(
+      "jwtMiddleware: Token verified successfully, sub:",
+      payload.sub
+    );
 
     // Set the payload in context for use by route handlers
     c.set("jwtPayload", payload);
 
     await next();
   } catch (error: any) {
-    console.error("JWT verification failed:", error);
+    console.error("jwtMiddleware: JWT verification failed:", error);
     const problem = {
       type: "unauthorized",
       title: "Unauthorized",
@@ -140,6 +157,31 @@ export const authMiddleware = createMiddleware(async (c, next) => {
     };
     throw new HTTPException(401, { message: JSON.stringify(problem) });
   }
+});
+
+/**
+ * Full authentication middleware - validates JWT + requires organization context
+ * Used for endpoints that need organization-scoped access
+ */
+export const authMiddleware = createMiddleware(async (c, next) => {
+  // First verify the JWT
+  await jwtMiddleware(c, async () => {
+    const payload = c.get("jwtPayload") as JWTPayload;
+
+    // Check for organization context
+    if (!payload.org_id) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Organization context required. Please select an organization.",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
+    await next();
+  });
 });
 
 export const requireScopes = (requiredScopes: string[]) => {
@@ -254,6 +296,39 @@ export const hasPermissions = (
 };
 
 /**
+ * Middleware to require a specific organization context
+ */
+export const requireOrganization = () => {
+  return createMiddleware(async (c, next) => {
+    const payload = c.get("jwtPayload") as JWTPayload;
+
+    if (!payload) {
+      const problem = {
+        type: "unauthorized",
+        title: "Unauthorized",
+        status: 401,
+        detail: "Missing or invalid authentication token",
+        instance: c.req.path,
+      };
+      throw new HTTPException(401, { message: JSON.stringify(problem) });
+    }
+
+    if (!payload.org_id) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Organization context required. Please select an organization.",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
+    await next();
+  });
+};
+
+/**
  * Helper function to check if user has required scopes (for inline use)
  */
 export const hasScopes = (
@@ -268,4 +343,11 @@ export const hasScopes = (
   }
 
   return requiredScopes.some((scope) => userScopes.includes(scope));
+};
+
+/**
+ * Helper function to get organization ID from JWT payload
+ */
+export const getOrganizationId = (payload: JWTPayload): string | null => {
+  return payload.org_id || null;
 };

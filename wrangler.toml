@@ -11,21 +11,21 @@ R2_ENDPOINT = "https://podcast-media.sesamy.dev"
 SERVICE_BASE_URL = "https://podcast-service.sesamy-dev.workers.dev"
 # Encoding service provider: 'aws' (default) or 'cloudflare'  
 ENCODING_SERVICE_PROVIDER = "aws"
-# TTS Configuration - nova-3 as default
-DEFAULT_TTS_MODEL = "@cf/openai/tts-1-hd"
-DEFAULT_TTS_VOICE = "nova"  
 # Transcription Configuration - nova-3 for enhanced features
-DEFAULT_TRANSCRIPTION_MODEL = "@cf/deepgram/nova-3"
+# DEFAULT_TRANSCRIPTION_MODEL = "@cf/deepgram/nova-3"
+DEFAULT_TRANSCRIPTION_MODEL = "@cf/openai/whisper"
 USE_NOVA3_FEATURES = "true"
-# Text-to-Speech configuration
-TTS_DEFAULT_MODEL = "@cf/openai/tts-1-hd"
-TTS_DEFAULT_VOICE = "nova"
+# Auth0 Configuration
+AUTH0_DOMAIN = "auth2.sesamy.dev"
+AUTH0_CLIENT_ID = "sesamy-fm"
+
 
 # Secrets to be set with: wrangler secret put <name>
 # - DATABASE_URL (for production Turso database)
 # - R2_ACCESS_KEY_ID (for R2 pre-signed URLs)
 # - R2_SECRET_ACCESS_KEY (for R2 pre-signed URLs)
-# R2_ENDPOINT is set above as environment variable for custom domain
+# - AUTH0_CLIENT_SECRET (Auth0 M2M client secret for organization management)
+# R2_ENDPOINT, AUTH0_DOMAIN, and AUTH0_CLIENT_ID are set below as environment variables (not secrets)
 
 # D1 Database binding
 [[d1_databases]]
@@ -44,12 +44,8 @@ preview_bucket_name = "podcast-service-assets"
 [ai]
 binding = "AI"
 
-# Container configuration for encoding service
-[[containers]]
-class_name = "EncodingContainer"
-image = "./Dockerfile.encoding"
-max_instances = 10
-instance_type = "standard"  # Use the largest available instance type for better performance
+# EncodingContainer is implemented as a Durable Object (see durable_objects.bindings below)
+# Containers feature is deprecated, using Durable Objects instead
 
 # Workflow configuration
 [[workflows]]

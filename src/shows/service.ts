@@ -17,11 +17,12 @@ export class ShowService {
     return await this.showRepository.findById(id);
   }
 
-  async createShow(data: CreateShow) {
+  async createShow(data: CreateShow, organizationId: string) {
     const id = uuidv4();
     const show = await this.showRepository.create({
       ...data,
       id,
+      organizationId,
     });
 
     // Publish event

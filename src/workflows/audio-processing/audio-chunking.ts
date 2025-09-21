@@ -85,7 +85,7 @@ export async function audioChunking(
       // Not JSON, use error text
       errorData = { error: errorText };
     }
-    
+
     throw new Error(`Chunking request failed: ${JSON.stringify(errorData)}`);
   }
 

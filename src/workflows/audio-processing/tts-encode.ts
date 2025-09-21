@@ -96,11 +96,7 @@ export async function encodeAudioForTTS(env: Env, workflowState: unknown) {
     encodedR2Key,
     encodedAudioUrl: encodedDownloadUrl, // Pre-signed for next step
     duration: encodeResult.metadata?.duration || 0,
-    signedUrls: [
-      audioDownloadUrl,
-      encodedUploadResult.url,
-      encodedDownloadUrl,
-    ],
+    signedUrls: [audioDownloadUrl, encodedUploadResult.url, encodedDownloadUrl],
   };
 
   // Validate output and return

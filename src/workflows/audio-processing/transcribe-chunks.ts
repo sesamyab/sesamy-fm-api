@@ -3,9 +3,7 @@ import type {
   ChunkingResult,
   WorkflowState,
   TranscribedChunk,
-  Nova3Response,
 } from "./types";
-import { Nova3ResponseSchema } from "./types";
 import { generateSignedDownloadUrl } from "../../utils/storage.js";
 
 interface TranscriptionOptions {
@@ -17,19 +15,6 @@ interface ChunkTranscription {
   chunkStartOffset: number;
   chunkIndex: number;
   transcript: any;
-}
-
-interface TranscriptionResult {
-  text?: string;
-  words?: Array<{ word: string; start: number; end: number }>;
-  language?: string;
-  sentiments?: any[];
-  summary?: string;
-  speakers?: any[];
-  keywords?: any[];
-  paragraphs?: any[];
-  chapters?: any[];
-  results?: any; // For Deepgram response format
 }
 
 async function fetchAudioData(
@@ -66,7 +51,7 @@ async function transcribeWithWhisper(
   const transcriptResponse = (await env.AI.run(
     workflowState.transcriptionModel as any,
     transcriptionOptions
-  )) as TranscriptionResult;
+  )) as any;
 
   // TODO: this is not true..
   return transcriptResponse as TranscribedChunk;
@@ -85,7 +70,7 @@ async function transcribeWithDeepgram(
   const transcriptionOptions: TranscriptionOptions = {
     audio: {
       body: response.body,
-      contentType: "audio/mpeg",
+      contentType: "audio/ogg",
     },
   };
 
@@ -109,8 +94,12 @@ async function transcribeWithDeepgram(
     return null;
   }
 
-  // Fallback for other models
-  return Nova3ResponseSchema.parse(transcriptResponse);
+  return {
+    startTime: chunkStartOffset,
+    endTime: chunkStartOffset + workflowState.chunkDuration,
+    chunkIndex: chunkIndex,
+    raw: transcriptResponse,
+  } as unknown as TranscribedChunk;
 }
 
 export async function transcribeChunks(
@@ -118,7 +107,6 @@ export async function transcribeChunks(
   workflowState: WorkflowState,
   chunkingResult: ChunkingResult
 ): Promise<{
-  transcribedChunks: TranscribedChunk[];
   chunkTranscriptionsUrl?: string;
 }> {
   // Validate chunks data before processing
@@ -185,11 +173,9 @@ export async function transcribeChunks(
       }
 
       return transcriptResult;
-    } catch (error) {
-      const errorMsg = `Transcription failed for chunk ${index}: ${
-        error instanceof Error ? error.message : String(error)
-      }`;
-      console.warn(errorMsg);
+    } catch (error: any) {
+      const errorMsg = `Transcription failed for chunk ${index}: ${error.message}`;
+
       chunkErrors.push({ index, error: errorMsg });
       return null;
     }
@@ -263,7 +249,6 @@ export async function transcribeChunks(
   }
 
   return {
-    transcribedChunks: transcribed,
     chunkTranscriptionsUrl,
   };
 }

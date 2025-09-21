@@ -1,3 +1,4 @@
+import { raw } from "hono/html";
 import { z } from "zod";
 
 // Enhanced workflow environment bindings
@@ -128,6 +129,7 @@ export const TranscribedChunkSchema = z.object({
   startTime: z.number().nonnegative(),
   endTime: z.number().positive(),
   chunkIndex: z.number().int().nonnegative(),
+  raw: z.any(),
   metadata: z
     .object({
       language: z.string().optional(),

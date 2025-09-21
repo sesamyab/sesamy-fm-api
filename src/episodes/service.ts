@@ -19,11 +19,16 @@ export class EpisodeService {
     return await this.episodeRepository.findById(showId, episodeId);
   }
 
-  async createEpisode(showId: string, data: CreateEpisode) {
+  async createEpisode(
+    showId: string,
+    data: CreateEpisode,
+    organizationId: string
+  ) {
     const id = uuidv4();
     const episode = await this.episodeRepository.create(showId, {
       ...data,
       id,
+      organizationId,
     });
 
     // Publish event

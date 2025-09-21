@@ -183,9 +183,10 @@ export class CreateShowStep
         }
       }
 
-      // Create the show
+      // Create the show (use default organization for RSS imports)
       const show = await showRepository.create({
         id: showId,
+        organizationId: "default-org", // TODO: Get from workflow context
         title: validInput.title,
         description: validInput.description,
         imageUrl: processedImageUrl,
@@ -320,9 +321,10 @@ export class ProcessEpisodeStep
         }
       }
 
-      // Create the episode
+      // Create the episode (use default organization for RSS imports)
       const episode = await episodeRepository.create(validInput.showId, {
         id: episodeId,
+        organizationId: "default-org", // TODO: Get from workflow context
         title: validInput.episode.title,
         description: validInput.episode.description,
         imageUrl: processedImageUrl,

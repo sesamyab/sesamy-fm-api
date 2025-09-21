@@ -4,17 +4,17 @@ import { cors } from "hono/cors";
 import { logger } from "hono/logger";
 
 import { errorHandler } from "./common/errors";
-import { authMiddleware } from "./auth/middleware";
+import { authMiddleware, jwtMiddleware } from "./auth/middleware";
 import { registerHealthRoutes } from "./health/routes";
 import { registerShowRoutes } from "./shows/routes";
 import { registerEpisodeRoutes } from "./episodes/routes";
 import { registerAudioRoutes } from "./audio/routes";
 import { registerFeedRoutes } from "./feed/routes";
 import { createTaskRoutes } from "./tasks/routes";
-import { createEncodingRoutes } from "./encoding/routes";
 import { createWorkflowRoutes } from "./workflows/routes";
 import storageRoutes from "./storage/routes";
 import { createCampaignRoutes } from "./campaigns/routes";
+import { registerOrganizationRoutes } from "./organizations/routes";
 
 // Services
 import { EventPublisher } from "./events/publisher";
@@ -28,6 +28,8 @@ import { TaskService } from "./tasks/service";
 import { CampaignRepository } from "./campaigns/repository";
 import { CampaignService } from "./campaigns/service";
 import { CreativeUploadService } from "./campaigns/creative-upload-service";
+import { OrganizationService } from "./organizations/service";
+import { Auth0Service } from "./auth/auth0-service";
 
 export function createApp(
   database?: D1Database,
@@ -40,7 +42,10 @@ export function createApp(
   audioProcessingWorkflow?: Workflow,
   importShowWorkflow?: Workflow,
   awsLambdaUrl?: string,
-  awsApiKey?: string
+  awsApiKey?: string,
+  auth0Domain?: string,
+  auth0ClientId?: string,
+  auth0ClientSecret?: string
 ) {
   const app = new OpenAPIHono();
 
@@ -97,6 +102,17 @@ export function createApp(
         )
       : undefined;
 
+  // Initialize Auth0 service and organization service
+  const auth0Service =
+    auth0Domain && auth0ClientId && auth0ClientSecret
+      ? new Auth0Service(auth0Domain, auth0ClientId, auth0ClientSecret)
+      : undefined;
+
+  const organizationService = new OrganizationService(
+    database ? require("./database/client").getDatabase(database) : undefined,
+    auth0Service
+  );
+
   // Global middleware
   app.use("*", cors());
   app.use("*", logger());
@@ -142,6 +158,8 @@ export function createApp(
   // Swagger UI
   app.get("/swagger", swaggerUI({ url: "/openapi.json" }));
 
+  // ===== ROUTES THAT DON'T REQUIRE AUTH =====
+
   // Storage routes for signed file operations (no auth required)
   app.route("/storage", storageRoutes);
 
@@ -151,20 +169,18 @@ export function createApp(
   // RSS feeds don't require authentication (public access)
   registerFeedRoutes(app, showService, episodeRepository, audioService);
 
-  // Encoding routes
-  app.route(
-    "/",
-    createEncodingRoutes(
-      encodingContainer,
-      database,
-      bucket,
-      ai,
-      awsLambdaUrl,
-      awsApiKey
-    )
-  );
+  // ===== ORGANIZATION ROUTES (REQUIRE ONLY VALID JWT) =====
 
-  // All other routes require authentication
+  // Apply JWT middleware for organizations (no org context required)
+  app.use("/organizations", jwtMiddleware);
+  app.use("/organizations/*", jwtMiddleware);
+
+  // Register organization routes
+  registerOrganizationRoutes(app, organizationService);
+
+  // ===== ALL OTHER ROUTES (REQUIRE JWT + ORGANIZATION CONTEXT) =====
+
+  // Apply full auth middleware (JWT + organization validation)
   app.use("/shows/*", (c, next) => {
     // Skip auth for RSS feed endpoints
     if (c.req.path.endsWith("/feed")) {
@@ -172,8 +188,9 @@ export function createApp(
     }
     return authMiddleware(c, next);
   });
+  app.use("/episodes/*", authMiddleware);
+  app.use("/audio/*", authMiddleware);
   app.use("/tasks/*", authMiddleware);
-  app.use("/encoding/*", authMiddleware);
   app.use("/workflows/*", authMiddleware);
   app.use("/campaigns/*", authMiddleware);
   app.use("/tts/*", authMiddleware);
@@ -196,7 +213,7 @@ export function createApp(
     return authMiddleware(c, next);
   });
 
-  // Register API routes
+  // Register protected API routes
   registerShowRoutes(
     app,
     showService,
@@ -214,18 +231,6 @@ export function createApp(
   );
   registerAudioRoutes(app, audioService);
   app.route("/", createTaskRoutes(database));
-  app.route(
-    "/",
-    createEncodingRoutes(
-      encodingContainer,
-      database,
-      bucket,
-      ai,
-      awsLambdaUrl,
-      awsApiKey
-    )
-  );
-
   app.route("/", createWorkflowRoutes());
   app.route(
     "/",

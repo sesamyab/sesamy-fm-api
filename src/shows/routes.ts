@@ -16,7 +16,12 @@ import {
 import { ShowService } from "./service";
 import { AudioService } from "../audio/service";
 import { ImageService } from "../images/service";
-import { requireScopes, hasPermissions, hasScopes } from "../auth/middleware";
+import {
+  requireScopes,
+  hasPermissions,
+  hasScopes,
+  getOrganizationId,
+} from "../auth/middleware";
 import { NotFoundError } from "../common/errors";
 import { JWTPayload } from "../auth/types";
 import { TaskService } from "../tasks/service";
@@ -392,8 +397,21 @@ export function registerShowRoutes(
       throw new HTTPException(403, { message: JSON.stringify(problem) });
     }
 
+    // Get organization ID from JWT
+    const organizationId = getOrganizationId(payload);
+    if (!organizationId) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Organization context required. Please select an organization.",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
     const showData = c.req.valid("json");
-    const show = await showService.createShow(showData);
+    const show = await showService.createShow(showData, organizationId);
 
     // Sign imageUrl if it has r2:// URL
     const signedShow = await signImageUrlInShow(show, audioService);

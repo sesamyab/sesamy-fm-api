@@ -41,7 +41,10 @@ export class EpisodeRepository {
     return result[0] || null;
   }
 
-  async create(showId: string, data: CreateEpisode & { id: string }) {
+  async create(
+    showId: string,
+    data: CreateEpisode & { id: string; organizationId: string }
+  ) {
     const now = new Date().toISOString();
 
     const newEpisode = {

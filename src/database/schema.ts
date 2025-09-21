@@ -1,10 +1,28 @@
-import { sqliteTable, text, integer, real } from "drizzle-orm/sqlite-core";
+import {
+  sqliteTable,
+  text,
+  integer,
+  real,
+  primaryKey,
+} from "drizzle-orm/sqlite-core";
 import { createInsertSchema, createSelectSchema } from "drizzle-zod";
 import { relations } from "drizzle-orm";
+
+// Organizations table
+export const organizations = sqliteTable("organizations", {
+  id: text("id").primaryKey(),
+  name: text("name").notNull(),
+  auth0OrgId: text("auth0_org_id").notNull().unique(),
+  createdAt: text("created_at").notNull(),
+  updatedAt: text("updated_at").notNull(),
+});
 
 // Shows table
 export const shows = sqliteTable("shows", {
   id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
   description: text("description").notNull(),
   imageUrl: text("image_url"),
@@ -18,6 +36,9 @@ export const shows = sqliteTable("shows", {
 // Episodes table
 export const episodes = sqliteTable("episodes", {
   id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   showId: text("show_id")
     .notNull()
     .references(() => shows.id, { onDelete: "cascade" }),
@@ -110,6 +131,9 @@ export const workflows = sqliteTable("workflows", {
 // Campaigns table
 export const campaigns = sqliteTable("campaigns", {
   id: text("id").primaryKey(),
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   name: text("name").notNull(),
   advertiser: text("advertiser"),
   startDate: text("start_date"),
@@ -156,13 +180,26 @@ export const campaignShows = sqliteTable("campaign_shows", {
 });
 
 // Relations
-export const showsRelations = relations(shows, ({ many }) => ({
+export const organizationsRelations = relations(organizations, ({ many }) => ({
+  shows: many(shows),
+  campaigns: many(campaigns),
+}));
+
+export const showsRelations = relations(shows, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [shows.organizationId],
+    references: [organizations.id],
+  }),
   episodes: many(episodes),
   imageUploads: many(imageUploads),
   campaignShows: many(campaignShows),
 }));
 
 export const episodesRelations = relations(episodes, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [episodes.organizationId],
+    references: [organizations.id],
+  }),
   show: one(shows, {
     fields: [episodes.showId],
     references: [shows.id],
@@ -203,7 +240,11 @@ export const workflowsRelations = relations(workflows, ({ one }) => ({
   }),
 }));
 
-export const campaignsRelations = relations(campaigns, ({ many }) => ({
+export const campaignsRelations = relations(campaigns, ({ one, many }) => ({
+  organization: one(organizations, {
+    fields: [campaigns.organizationId],
+    references: [organizations.id],
+  }),
   creatives: many(creatives),
   campaignShows: many(campaignShows),
 }));
@@ -227,6 +268,9 @@ export const campaignShowsRelations = relations(campaignShows, ({ one }) => ({
 }));
 
 // Zod schemas for validation
+export const insertOrganizationSchema = createInsertSchema(organizations);
+export const selectOrganizationSchema = createSelectSchema(organizations);
+
 export const insertShowSchema = createInsertSchema(shows);
 export const selectShowSchema = createSelectSchema(shows);
 
@@ -255,6 +299,9 @@ export const insertCampaignShowSchema = createInsertSchema(campaignShows);
 export const selectCampaignShowSchema = createSelectSchema(campaignShows);
 
 // Types
+export type Organization = typeof organizations.$inferSelect;
+export type NewOrganization = typeof organizations.$inferInsert;
+
 export type Show = typeof shows.$inferSelect;
 export type NewShow = typeof shows.$inferInsert;
 

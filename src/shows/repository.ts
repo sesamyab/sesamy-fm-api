@@ -43,7 +43,7 @@ export class ShowRepository {
     };
   }
 
-  async create(data: CreateShow & { id: string }) {
+  async create(data: CreateShow & { id: string; organizationId: string }) {
     const now = new Date().toISOString();
 
     const newShow = {
