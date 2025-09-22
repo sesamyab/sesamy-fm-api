@@ -330,7 +330,9 @@ export function createWorkflowRoutes() {
   // Apply auth middleware to all routes
   app.use("*", authMiddleware);
 
-  // Health check endpoint
+  // --------------------------------
+  // GET /workflows/health
+  // --------------------------------
   app.openapi(healthRoute, async (c) => {
     const env = c.env;
 
@@ -356,7 +358,9 @@ export function createWorkflowRoutes() {
     });
   });
 
-  // List workflow instances
+  // --------------------------------
+  // GET /workflows/instances
+  // --------------------------------
   app.openapi(listInstancesRoute, async (c) => {
     try {
       const query = c.req.valid("query");
@@ -435,7 +439,9 @@ export function createWorkflowRoutes() {
     }
   });
 
-  // Get workflow statistics
+  // --------------------------------
+  // GET /workflows/instances/stats
+  // --------------------------------
   app.openapi(statsRoute, async (c) => {
     try {
       // Placeholder implementation
@@ -465,7 +471,9 @@ export function createWorkflowRoutes() {
     }
   });
 
-  // Get specific workflow instance
+  // --------------------------------
+  // GET /workflows/instances/{workflowId}
+  // --------------------------------
   app.openapi(getInstanceRoute, async (c) => {
     try {
       const { workflowId } = c.req.valid("param");
@@ -490,7 +498,9 @@ export function createWorkflowRoutes() {
     }
   });
 
-  // Start audio processing workflow
+  // --------------------------------
+  // POST /workflows/audio-processing
+  // --------------------------------
   app.openapi(audioProcessingRoute, async (c) => {
     try {
       const env = c.env;

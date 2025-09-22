@@ -9,12 +9,17 @@ export class ShowService {
     private eventPublisher: EventPublisher
   ) {}
 
-  async getAllShows(pagination: Pagination) {
-    return await this.showRepository.findAll(pagination);
+  async getAllShows(pagination: Pagination, organizationId: string) {
+    return await this.showRepository.findAll(pagination, organizationId);
   }
 
-  async getShowById(id: string) {
-    return await this.showRepository.findById(id);
+  async getShowById(id: string, organizationId: string) {
+    return await this.showRepository.findById(id, organizationId);
+  }
+
+  // Public method for RSS feeds - gets show by ID without organization context
+  async getShowByIdPublic(id: string) {
+    return await this.showRepository.findByIdPublic(id);
   }
 
   async createShow(data: CreateShow, organizationId: string) {
@@ -31,8 +36,8 @@ export class ShowService {
     return show;
   }
 
-  async updateShow(id: string, data: UpdateShow) {
-    const show = await this.showRepository.update(id, data);
+  async updateShow(id: string, data: UpdateShow, organizationId: string) {
+    const show = await this.showRepository.update(id, data, organizationId);
 
     // Publish event
     await this.eventPublisher.publish("show.updated", show, show.id);
@@ -40,13 +45,13 @@ export class ShowService {
     return show;
   }
 
-  async deleteShow(id: string) {
-    const show = await this.showRepository.findById(id);
+  async deleteShow(id: string, organizationId: string) {
+    const show = await this.showRepository.findById(id, organizationId);
     if (!show) {
       return false;
     }
 
-    await this.showRepository.delete(id);
+    await this.showRepository.delete(id, organizationId);
 
     // Publish event
     await this.eventPublisher.publish("show.deleted", { id }, id);

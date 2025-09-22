@@ -31,7 +31,6 @@ async function getJWKS(): Promise<any[]> {
 
     return keys;
   } catch (error) {
-    console.error("Error fetching JWKS:", error);
     throw new Error("Unable to fetch JWT verification keys");
   }
 }
@@ -90,7 +89,6 @@ async function jwkToPem(jwk: any): Promise<string> {
 
     return pem;
   } catch (error) {
-    console.error("Error converting JWK to PEM:", error);
     throw new Error("Failed to convert JWK to PEM format");
   }
 }
@@ -100,15 +98,9 @@ async function jwkToPem(jwk: any): Promise<string> {
  * Used for endpoints that only need a valid user token (like organizations)
  */
 export const jwtMiddleware = createMiddleware(async (c, next) => {
-  console.log("jwtMiddleware: Starting authentication for path:", c.req.path);
   const authHeader = c.req.header("Authorization");
-  console.log(
-    "jwtMiddleware: Authorization header:",
-    authHeader ? "Present" : "Missing"
-  );
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
-    console.log("jwtMiddleware: Missing or invalid authorization header");
     const problem = {
       type: "unauthorized",
       title: "Unauthorized",
@@ -120,12 +112,10 @@ export const jwtMiddleware = createMiddleware(async (c, next) => {
   }
 
   const token = authHeader.substring(7); // Remove "Bearer " prefix
-  console.log("jwtMiddleware: Token extracted, length:", token.length);
 
   try {
     // First, decode the token to get the header (including kid)
     const { header } = decode(token);
-    console.log("jwtMiddleware: Token decoded, kid:", header.kid);
 
     if (!header.kid) {
       throw new Error("Token missing key ID (kid)");
@@ -133,21 +123,15 @@ export const jwtMiddleware = createMiddleware(async (c, next) => {
 
     // Get the public key for verification
     const publicKey = await getPublicKey(header.kid);
-    console.log("jwtMiddleware: Public key retrieved");
 
     // Verify the token
     const payload = await verify(token, publicKey, header.alg || "RS256");
-    console.log(
-      "jwtMiddleware: Token verified successfully, sub:",
-      payload.sub
-    );
 
     // Set the payload in context for use by route handlers
     c.set("jwtPayload", payload);
 
     await next();
   } catch (error: any) {
-    console.error("jwtMiddleware: JWT verification failed:", error);
     const problem = {
       type: "unauthorized",
       title: "Unauthorized",

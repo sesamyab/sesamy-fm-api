@@ -118,10 +118,12 @@ export function registerFeedRoutes(
   episodeRepository: EpisodeRepository,
   audioService?: AudioService
 ) {
-  // Get RSS feed for show
+  // --------------------------------
+  // GET /feeds/{show_id}
+  // --------------------------------
   app.openapi(getShowFeedRoute, async (c) => {
     const { show_id } = c.req.valid("param");
-    const show = await showService.getShowById(show_id);
+    const show = await showService.getShowByIdPublic(show_id);
 
     if (!show) {
       const problem = {

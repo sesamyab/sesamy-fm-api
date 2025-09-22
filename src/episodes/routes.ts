@@ -357,7 +357,9 @@ export function registerEpisodeRoutes(
   imageService?: ImageService,
   bucket?: R2Bucket
 ) {
-  // Get episodes for a show
+  // --------------------------------
+  // GET /shows/{show_id}/episodes
+  // --------------------------------
   app.openapi(getEpisodesRoute, async (c) => {
     // Check auth - look for permissions first, then fall back to scopes
     const payload = c.get("jwtPayload") as JWTPayload;
@@ -398,7 +400,9 @@ export function registerEpisodeRoutes(
     return c.json(signedEpisodes);
   });
 
-  // Get episode by ID
+  // --------------------------------
+  // GET /shows/{show_id}/episodes/{episode_id}
+  // --------------------------------
   app.openapi(getEpisodeRoute, async (c) => {
     // Check auth - look for permissions first, then fall back to scopes
     const payload = c.get("jwtPayload") as JWTPayload;
@@ -438,7 +442,9 @@ export function registerEpisodeRoutes(
     return c.json(signedEpisode);
   });
 
-  // Create episode
+  // --------------------------------
+  // POST /shows/{show_id}/episodes
+  // --------------------------------
   app.openapi(createEpisodeRoute, async (c) => {
     const payload = c.get("jwtPayload") as JWTPayload;
     const hasWritePermission = hasPermissions(payload, ["podcast:write"]);
@@ -497,7 +503,9 @@ export function registerEpisodeRoutes(
     }
   });
 
-  // Update episode
+  // --------------------------------
+  // PATCH /shows/{show_id}/episodes/{episode_id}
+  // --------------------------------
   app.openapi(updateEpisodeRoute, async (c) => {
     const payload = c.get("jwtPayload") as JWTPayload;
     const hasWritePermission = hasPermissions(payload, ["podcast:write"]);
@@ -543,7 +551,9 @@ export function registerEpisodeRoutes(
     }
   });
 
-  // Publish episode
+  // --------------------------------
+  // POST /shows/{show_id}/episodes/{episode_id}/publish
+  // --------------------------------
   app.openapi(publishEpisodeRoute, async (c) => {
     const payload = c.get("jwtPayload") as JWTPayload;
     const hasPublishPermission = hasPermissions(payload, ["podcast:publish"]);
@@ -585,7 +595,9 @@ export function registerEpisodeRoutes(
     }
   });
 
-  // Delete episode
+  // --------------------------------
+  // DELETE /shows/{show_id}/episodes/{episode_id}
+  // --------------------------------
   app.openapi(deleteEpisodeRoute, async (c) => {
     const payload = c.get("jwtPayload") as JWTPayload;
     const hasWritePermission = hasPermissions(payload, ["podcast:write"]);
@@ -621,7 +633,9 @@ export function registerEpisodeRoutes(
     }
   });
 
-  // Upload episode image
+  // --------------------------------
+  // POST /shows/{show_id}/episodes/{episode_id}/image
+  // --------------------------------
   app.openapi(uploadEpisodeImageRoute, async (c) => {
     // Check authorization
     const payload = c.get("jwtPayload") as JWTPayload;
@@ -699,7 +713,9 @@ export function registerEpisodeRoutes(
     }
   });
 
-  // Get episode transcript
+  // --------------------------------
+  // GET /shows/{show_id}/episodes/{episode_id}/transcript
+  // --------------------------------
   app.openapi(getEpisodeTranscriptRoute, async (c) => {
     // Check auth - look for permissions first, then fall back to scopes
     const payload = c.get("jwtPayload") as JWTPayload;

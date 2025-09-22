@@ -1,4 +1,4 @@
-import { eq } from "drizzle-orm";
+import { eq, and } from "drizzle-orm";
 import { getDatabase } from "../database/client";
 import { shows } from "../database/schema";
 import { CreateShow, UpdateShow, Pagination } from "./schemas";
@@ -11,10 +11,11 @@ export class ShowRepository {
     this.db = getDatabase(database);
   }
 
-  async findAll({ limit, offset }: Pagination) {
+  async findAll({ limit, offset }: Pagination, organizationId: string) {
     const results = await this.db
       .select()
       .from(shows)
+      .where(eq(shows.organizationId, organizationId))
       .limit(limit)
       .offset(offset)
       .orderBy(shows.createdAt);
@@ -26,7 +27,25 @@ export class ShowRepository {
     }));
   }
 
-  async findById(id: string) {
+  async findById(id: string, organizationId: string) {
+    const result = await this.db
+      .select()
+      .from(shows)
+      .where(and(eq(shows.id, id), eq(shows.organizationId, organizationId)))
+      .limit(1);
+
+    const show = result[0] || null;
+    if (!show) return null;
+
+    // Parse categories JSON
+    return {
+      ...show,
+      categories: show.categories ? JSON.parse(show.categories) : null,
+    };
+  }
+
+  // Public method for RSS feeds - finds show by ID without organization context
+  async findByIdPublic(id: string) {
     const result = await this.db
       .select()
       .from(shows)
@@ -62,8 +81,8 @@ export class ShowRepository {
     };
   }
 
-  async update(id: string, data: UpdateShow) {
-    const existing = await this.findById(id);
+  async update(id: string, data: UpdateShow, organizationId: string) {
+    const existing = await this.findById(id, organizationId);
     if (!existing) {
       throw new NotFoundError("Show not found");
     }
@@ -77,7 +96,10 @@ export class ShowRepository {
       updatedAt,
     };
 
-    await this.db.update(shows).set(updateData).where(eq(shows.id, id));
+    await this.db
+      .update(shows)
+      .set(updateData)
+      .where(and(eq(shows.id, id), eq(shows.organizationId, organizationId)));
 
     // Return with parsed categories
     const updatedShow = {
@@ -89,13 +111,15 @@ export class ShowRepository {
     return updatedShow;
   }
 
-  async delete(id: string) {
-    const existing = await this.findById(id);
+  async delete(id: string, organizationId: string) {
+    const existing = await this.findById(id, organizationId);
     if (!existing) {
       throw new NotFoundError("Show not found");
     }
 
-    await this.db.delete(shows).where(eq(shows.id, id));
+    await this.db
+      .delete(shows)
+      .where(and(eq(shows.id, id), eq(shows.organizationId, organizationId)));
     return true;
   }
 }

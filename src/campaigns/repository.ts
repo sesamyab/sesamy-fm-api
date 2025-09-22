@@ -20,19 +20,21 @@ export class CampaignRepository {
     this.db = getDatabase(database);
   }
 
-  async findAll(pagination: Pagination) {
+  async findAll(pagination: Pagination, organizationId: string) {
     const offset = (pagination.page - 1) * pagination.limit;
 
     const [campaignsData, totalCount] = await Promise.all([
       this.db
         .select()
         .from(campaigns)
+        .where(eq(campaigns.organizationId, organizationId))
         .orderBy(desc(campaigns.createdAt))
         .limit(pagination.limit)
         .offset(offset),
       this.db
         .select({ count: count() })
         .from(campaigns)
+        .where(eq(campaigns.organizationId, organizationId))
         .then((result: any) => result[0].count),
     ]);
 
@@ -47,18 +49,20 @@ export class CampaignRepository {
     };
   }
 
-  async findById(id: string): Promise<Campaign | null> {
+  async findById(id: string, organizationId: string): Promise<Campaign | null> {
     const campaign = await this.db
       .select()
       .from(campaigns)
-      .where(eq(campaigns.id, id))
+      .where(
+        and(eq(campaigns.id, id), eq(campaigns.organizationId, organizationId))
+      )
       .limit(1);
 
     return campaign[0] || null;
   }
 
-  async findByIdWithDetails(id: string) {
-    const campaign = await this.findById(id);
+  async findByIdWithDetails(id: string, organizationId: string) {
+    const campaign = await this.findById(id, organizationId);
     if (!campaign) {
       throw new NotFoundError("Campaign not found");
     }
@@ -108,7 +112,8 @@ export class CampaignRepository {
 
   async update(
     id: string,
-    data: Partial<Omit<NewCampaign, "createdAt" | "updatedAt">>
+    data: Partial<Omit<NewCampaign, "createdAt" | "updatedAt">>,
+    organizationId: string
   ): Promise<Campaign> {
     const now = new Date().toISOString();
     const updateData = {
@@ -119,7 +124,9 @@ export class CampaignRepository {
     const result = await this.db
       .update(campaigns)
       .set(updateData)
-      .where(eq(campaigns.id, id))
+      .where(
+        and(eq(campaigns.id, id), eq(campaigns.organizationId, organizationId))
+      )
       .returning();
 
     if (result.length === 0) {
@@ -129,10 +136,12 @@ export class CampaignRepository {
     return result[0];
   }
 
-  async delete(id: string): Promise<boolean> {
+  async delete(id: string, organizationId: string): Promise<boolean> {
     const result = await this.db
       .delete(campaigns)
-      .where(eq(campaigns.id, id))
+      .where(
+        and(eq(campaigns.id, id), eq(campaigns.organizationId, organizationId))
+      )
       .returning();
 
     return result.length > 0;

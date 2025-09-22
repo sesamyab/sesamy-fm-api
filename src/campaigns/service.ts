@@ -16,25 +16,29 @@ export class CampaignService {
     private eventPublisher: EventPublisher
   ) {}
 
-  async getAllCampaigns(pagination: Pagination) {
-    return await this.campaignRepository.findAll(pagination);
+  async getAllCampaigns(pagination: Pagination, organizationId: string) {
+    return await this.campaignRepository.findAll(pagination, organizationId);
   }
 
-  async getCampaignById(id: string) {
-    return await this.campaignRepository.findById(id);
+  async getCampaignById(id: string, organizationId: string) {
+    return await this.campaignRepository.findById(id, organizationId);
   }
 
-  async getCampaignByIdWithDetails(id: string) {
-    return await this.campaignRepository.findByIdWithDetails(id);
+  async getCampaignByIdWithDetails(id: string, organizationId: string) {
+    return await this.campaignRepository.findByIdWithDetails(
+      id,
+      organizationId
+    );
   }
 
-  async createCampaign(data: CreateCampaign) {
+  async createCampaign(data: CreateCampaign, organizationId: string) {
     const id = uuidv4();
     const { showIds, ...campaignData } = data;
 
     // Create the campaign - all required fields must be present
     const campaign = await this.campaignRepository.create({
       id,
+      organizationId,
       name: campaignData.name,
       startDate: campaignData.startDate,
       endDate: campaignData.endDate,
@@ -59,11 +63,19 @@ export class CampaignService {
     return campaign;
   }
 
-  async updateCampaign(id: string, data: UpdateCampaign) {
+  async updateCampaign(
+    id: string,
+    data: UpdateCampaign,
+    organizationId: string
+  ) {
     const { showIds, ...campaignData } = data;
 
     // Update the campaign
-    const campaign = await this.campaignRepository.update(id, campaignData);
+    const campaign = await this.campaignRepository.update(
+      id,
+      campaignData,
+      organizationId
+    );
 
     // Update campaign-show relationships if showIds provided
     if (showIds !== undefined) {
@@ -80,13 +92,13 @@ export class CampaignService {
     return campaign;
   }
 
-  async deleteCampaign(id: string) {
-    const campaign = await this.campaignRepository.findById(id);
+  async deleteCampaign(id: string, organizationId: string) {
+    const campaign = await this.campaignRepository.findById(id, organizationId);
     if (!campaign) {
       return false;
     }
 
-    const deleted = await this.campaignRepository.delete(id);
+    const deleted = await this.campaignRepository.delete(id, organizationId);
 
     if (deleted) {
       // Publish event
@@ -97,9 +109,12 @@ export class CampaignService {
   }
 
   // Creative management methods
-  async getCampaignCreatives(campaignId: string) {
+  async getCampaignCreatives(campaignId: string, organizationId: string) {
     // Verify campaign exists
-    const campaign = await this.campaignRepository.findById(campaignId);
+    const campaign = await this.campaignRepository.findById(
+      campaignId,
+      organizationId
+    );
     if (!campaign) {
       throw new NotFoundError("Campaign not found");
     }
@@ -107,7 +122,20 @@ export class CampaignService {
     return await this.campaignRepository.findCreativesByCampaign(campaignId);
   }
 
-  async getCreativeById(campaignId: string, creativeId: string) {
+  async getCreativeById(
+    campaignId: string,
+    creativeId: string,
+    organizationId: string
+  ) {
+    // Verify campaign exists and belongs to the organization
+    const campaign = await this.campaignRepository.findById(
+      campaignId,
+      organizationId
+    );
+    if (!campaign) {
+      throw new NotFoundError("Campaign not found");
+    }
+
     return await this.campaignRepository.findCreativeById(
       campaignId,
       creativeId
@@ -116,10 +144,14 @@ export class CampaignService {
 
   async createCreative(
     campaignId: string,
-    data: Omit<CreateCreative, "campaignId">
+    data: Omit<CreateCreative, "campaignId">,
+    organizationId: string
   ) {
     // Verify campaign exists
-    const campaign = await this.campaignRepository.findById(campaignId);
+    const campaign = await this.campaignRepository.findById(
+      campaignId,
+      organizationId
+    );
     if (!campaign) {
       throw new NotFoundError("Campaign not found");
     }
@@ -148,8 +180,18 @@ export class CampaignService {
   async updateCreative(
     campaignId: string,
     creativeId: string,
-    data: UpdateCreative
+    data: UpdateCreative,
+    organizationId: string
   ) {
+    // Verify campaign exists and belongs to the organization
+    const campaign = await this.campaignRepository.findById(
+      campaignId,
+      organizationId
+    );
+    if (!campaign) {
+      throw new NotFoundError("Campaign not found");
+    }
+
     const creative = await this.campaignRepository.updateCreative(
       campaignId,
       creativeId,
@@ -166,7 +208,20 @@ export class CampaignService {
     return creative;
   }
 
-  async deleteCreative(campaignId: string, creativeId: string) {
+  async deleteCreative(
+    campaignId: string,
+    creativeId: string,
+    organizationId: string
+  ) {
+    // Verify campaign exists and belongs to the organization
+    const campaign = await this.campaignRepository.findById(
+      campaignId,
+      organizationId
+    );
+    if (!campaign) {
+      throw new NotFoundError("Campaign not found");
+    }
+
     const creative = await this.campaignRepository.findCreativeById(
       campaignId,
       creativeId
@@ -193,9 +248,12 @@ export class CampaignService {
   }
 
   // Campaign-Show relationship methods
-  async getCampaignShows(campaignId: string) {
+  async getCampaignShows(campaignId: string, organizationId: string) {
     // Verify campaign exists
-    const campaign = await this.campaignRepository.findById(campaignId);
+    const campaign = await this.campaignRepository.findById(
+      campaignId,
+      organizationId
+    );
     if (!campaign) {
       throw new NotFoundError("Campaign not found");
     }
@@ -203,9 +261,16 @@ export class CampaignService {
     return await this.campaignRepository.findShowsByCampaign(campaignId);
   }
 
-  async addShowToCampaign(campaignId: string, showId: string) {
+  async addShowToCampaign(
+    campaignId: string,
+    showId: string,
+    organizationId: string
+  ) {
     // Verify campaign exists
-    const campaign = await this.campaignRepository.findById(campaignId);
+    const campaign = await this.campaignRepository.findById(
+      campaignId,
+      organizationId
+    );
     if (!campaign) {
       throw new NotFoundError("Campaign not found");
     }

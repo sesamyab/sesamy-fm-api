@@ -59,7 +59,9 @@ const readinessRoute = createRoute({
 export function registerHealthRoutes(app: OpenAPIHono, database?: D1Database) {
   const db = getDatabase(database);
 
-  // Liveness - always returns healthy if the process is running
+  // --------------------------------
+  // GET /healthz
+  // --------------------------------
   app.openapi(livenessRoute, async (c) => {
     return c.json({
       status: "healthy",
@@ -69,7 +71,9 @@ export function registerHealthRoutes(app: OpenAPIHono, database?: D1Database) {
     });
   });
 
-  // Readiness - checks database connection and other dependencies
+  // --------------------------------
+  // GET /readyz
+  // --------------------------------
   app.openapi(readinessRoute, async (c) => {
     try {
       // Check database connection

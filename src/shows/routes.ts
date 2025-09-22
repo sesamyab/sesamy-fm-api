@@ -311,7 +311,9 @@ export function registerShowRoutes(
   database?: D1Database,
   importShowWorkflow?: Workflow
 ) {
-  // Get all shows
+  // --------------------------------
+  // GET /shows
+  // --------------------------------
   app.openapi(getShowsRoute, async (c) => {
     // Check auth - look for permissions first, then fall back to scopes
     const payload = c.get("jwtPayload") as JWTPayload;
@@ -330,8 +332,21 @@ export function registerShowRoutes(
       throw new HTTPException(403, { message: JSON.stringify(problem) });
     }
 
+    // Extract organization ID from JWT payload
+    const organizationId = getOrganizationId(payload);
+    if (!organizationId) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Organization context required. Please select an organization.",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
     const pagination = c.req.valid("query");
-    const shows = await showService.getAllShows(pagination);
+    const shows = await showService.getAllShows(pagination, organizationId);
 
     // Sign imageUrl in shows if they have r2:// URLs
     const signedShows = await Promise.all(
@@ -341,7 +356,9 @@ export function registerShowRoutes(
     return c.json(signedShows);
   });
 
-  // Get show by ID
+  // --------------------------------
+  // GET /shows/{show_id}
+  // --------------------------------
   app.openapi(getShowRoute, async (c) => {
     // Check auth - look for permissions first, then fall back to scopes
     const payload = c.get("jwtPayload") as JWTPayload;
@@ -360,8 +377,21 @@ export function registerShowRoutes(
       throw new HTTPException(403, { message: JSON.stringify(problem) });
     }
 
+    // Extract organization ID from JWT payload
+    const organizationId = getOrganizationId(payload);
+    if (!organizationId) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Organization context required. Please select an organization.",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
     const { show_id } = c.req.valid("param");
-    const show = await showService.getShowById(show_id);
+    const show = await showService.getShowById(show_id, organizationId);
 
     if (!show) {
       const problem = {
@@ -380,7 +410,9 @@ export function registerShowRoutes(
     return c.json(signedShow);
   });
 
-  // Create show
+  // --------------------------------
+  // POST /shows
+  // --------------------------------
   app.openapi(createShowRoute, async (c) => {
     // Check auth
     const payload = c.get("jwtPayload") as JWTPayload;
@@ -419,7 +451,9 @@ export function registerShowRoutes(
     return c.json(signedShow, 201);
   });
 
-  // Import show from RSS
+  // --------------------------------
+  // POST /shows/import
+  // --------------------------------
   app.openapi(importShowFromRSSRoute, async (c) => {
     // Check auth
     const payload = c.get("jwtPayload") as JWTPayload;
@@ -539,7 +573,9 @@ export function registerShowRoutes(
     }
   });
 
-  // RSS preview
+  // --------------------------------
+  // POST /shows/preview-rss
+  // --------------------------------
   app.openapi(rssPreviewRoute, async (c) => {
     // Check auth
     const payload = c.get("jwtPayload") as JWTPayload;
@@ -622,7 +658,9 @@ export function registerShowRoutes(
     }
   });
 
-  // Update show
+  // --------------------------------
+  // PATCH /shows/{show_id}
+  // --------------------------------
   app.openapi(updateShowRoute, async (c) => {
     // Check auth
     const payload = c.get("jwtPayload") as JWTPayload;
@@ -639,11 +677,28 @@ export function registerShowRoutes(
       throw new HTTPException(403, { message: JSON.stringify(problem) });
     }
 
+    // Extract organization ID from JWT payload
+    const organizationId = getOrganizationId(payload);
+    if (!organizationId) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Organization context required. Please select an organization.",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
     const { show_id } = c.req.valid("param");
     const updateData = c.req.valid("json");
 
     try {
-      const show = await showService.updateShow(show_id, updateData);
+      const show = await showService.updateShow(
+        show_id,
+        updateData,
+        organizationId
+      );
 
       // Sign imageUrl if it has r2:// URL
       const signedShow = await signImageUrlInShow(show, audioService);
@@ -664,7 +719,9 @@ export function registerShowRoutes(
     }
   });
 
-  // Delete show
+  // --------------------------------
+  // DELETE /shows/{show_id}
+  // --------------------------------
   app.openapi(deleteShowRoute, async (c) => {
     // Check auth
     const payload = c.get("jwtPayload") as JWTPayload;
@@ -681,10 +738,23 @@ export function registerShowRoutes(
       throw new HTTPException(403, { message: JSON.stringify(problem) });
     }
 
+    // Extract organization ID from JWT payload
+    const organizationId = getOrganizationId(payload);
+    if (!organizationId) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Organization context required. Please select an organization.",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
     const { show_id } = c.req.valid("param");
 
     try {
-      await showService.deleteShow(show_id);
+      await showService.deleteShow(show_id, organizationId);
       return c.body(null, 204);
     } catch (error) {
       if (error instanceof NotFoundError) {
@@ -701,7 +771,9 @@ export function registerShowRoutes(
     }
   });
 
-  // Upload show image
+  // --------------------------------
+  // POST /shows/{show_id}/image
+  // --------------------------------
   app.openapi(uploadShowImageRoute, async (c) => {
     // Check authorization
     const payload = c.get("jwtPayload") as JWTPayload;

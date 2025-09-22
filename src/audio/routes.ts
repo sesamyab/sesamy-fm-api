@@ -79,7 +79,9 @@ export function registerAudioRoutes(
   app: OpenAPIHono,
   audioService: AudioService
 ) {
-  // Upload audio file
+  // --------------------------------
+  // POST /shows/{show_id}/episodes/{episode_id}/audio
+  // --------------------------------
   app.openapi(uploadAudioRoute, async (c) => {
     // Check auth
     const payload = c.get("jwtPayload") as JWTPayload;
@@ -150,7 +152,9 @@ export function registerAudioRoutes(
     }
   });
 
-  // Get audio metadata
+  // --------------------------------
+  // GET /shows/{show_id}/episodes/{episode_id}/audio
+  // --------------------------------
   app.openapi(getAudioRoute, async (c) => {
     // Check auth
     const payload = c.get("jwtPayload") as JWTPayload;

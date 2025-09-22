@@ -199,7 +199,9 @@ export const createTaskRoutes = (database?: D1Database) => {
   // Apply authentication middleware - using colon notation to match user permissions
   app.use("*", requireScopes(["podcast:read", "podcast:write"]));
 
-  // Create task
+  // --------------------------------
+  // POST /tasks
+  // --------------------------------
   app.openapi(createTaskRoute, async (c) => {
     const body = c.req.valid("json");
 
@@ -207,7 +209,9 @@ export const createTaskRoutes = (database?: D1Database) => {
     return c.json(serializeTask(task), 201);
   });
 
-  // List tasks
+  // --------------------------------
+  // GET /tasks
+  // --------------------------------
   app.openapi(getTasksRoute, async (c) => {
     const query = c.req.valid("query");
 
@@ -222,7 +226,9 @@ export const createTaskRoutes = (database?: D1Database) => {
     return c.json(tasks.map(serializeTask));
   });
 
-  // Get specific task
+  // --------------------------------
+  // GET /tasks/{task_id}
+  // --------------------------------
   app.openapi(getTaskRoute, async (c) => {
     const { task_id } = c.req.valid("param");
 
@@ -235,7 +241,9 @@ export const createTaskRoutes = (database?: D1Database) => {
     return c.json(serializeTask(task));
   });
 
-  // Retry task
+  // --------------------------------
+  // POST /tasks/{task_id}/retry
+  // --------------------------------
   app.openapi(retryTaskRoute, async (c) => {
     const { task_id } = c.req.valid("param");
 
