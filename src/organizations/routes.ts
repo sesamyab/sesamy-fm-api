@@ -115,7 +115,6 @@ export function registerOrganizationRoutes(
               schema: z.object({
                 id: z.string(),
                 name: z.string(),
-                auth0_id: z.string(),
                 created_at: z.string(),
               }),
             },
@@ -136,6 +135,45 @@ export function registerOrganizationRoutes(
         },
         401: {
           description: "Unauthorized",
+          content: {
+            "application/json": {
+              schema: z.object({
+                type: z.string(),
+                title: z.string(),
+                status: z.number(),
+                detail: z.string(),
+              }),
+            },
+          },
+        },
+        403: {
+          description: "Forbidden",
+          content: {
+            "application/json": {
+              schema: z.object({
+                type: z.string(),
+                title: z.string(),
+                status: z.number(),
+                detail: z.string(),
+              }),
+            },
+          },
+        },
+        409: {
+          description: "Conflict - Organization name already exists",
+          content: {
+            "application/json": {
+              schema: z.object({
+                type: z.string(),
+                title: z.string(),
+                status: z.number(),
+                detail: z.string(),
+              }),
+            },
+          },
+        },
+        503: {
+          description: "Service unavailable",
           content: {
             "application/json": {
               schema: z.object({
@@ -176,21 +214,72 @@ export function registerOrganizationRoutes(
           {
             id: result.organization.id,
             name: result.organization.name,
-            auth0_id: result.organization.auth0OrgId,
             created_at: result.organization.createdAt,
           },
           201
         );
-      } catch (error) {
+      } catch (error: any) {
         console.error("Error creating organization:", error);
-        const problem = {
-          type: "internal_error",
-          title: "Internal Server Error",
-          status: 500,
-          detail: "Failed to create organization",
-          instance: c.req.path,
-        };
-        throw new HTTPException(500, { message: JSON.stringify(problem) });
+
+        // Determine status and problem type based on error message
+        const errorMessage = error.message || "";
+
+        if (errorMessage.includes("already exists")) {
+          const problem = {
+            type: "conflict",
+            title: "Conflict",
+            status: 409,
+            detail: error.message,
+            instance: c.req.path,
+          };
+          throw new HTTPException(409, {
+            message: JSON.stringify(problem),
+          });
+        } else if (errorMessage.includes("Invalid organization data")) {
+          const problem = {
+            type: "bad_request",
+            title: "Bad Request",
+            status: 400,
+            detail: error.message,
+            instance: c.req.path,
+          };
+          throw new HTTPException(400, {
+            message: JSON.stringify(problem),
+          });
+        } else if (errorMessage.includes("Insufficient permissions")) {
+          const problem = {
+            type: "forbidden",
+            title: "Forbidden",
+            status: 403,
+            detail: error.message,
+            instance: c.req.path,
+          };
+          throw new HTTPException(403, {
+            message: JSON.stringify(problem),
+          });
+        } else if (errorMessage.includes("Auth0 service not configured")) {
+          const problem = {
+            type: "service_unavailable",
+            title: "Service Unavailable",
+            status: 503,
+            detail: "Organization service is not properly configured",
+            instance: c.req.path,
+          };
+          throw new HTTPException(503, {
+            message: JSON.stringify(problem),
+          });
+        } else {
+          const problem = {
+            type: "internal_error",
+            title: "Internal Server Error",
+            status: 500,
+            detail: error.message || "Failed to create organization",
+            instance: c.req.path,
+          };
+          throw new HTTPException(500, {
+            message: JSON.stringify(problem),
+          });
+        }
       }
     }
   );

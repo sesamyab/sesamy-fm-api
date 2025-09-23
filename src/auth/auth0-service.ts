@@ -56,9 +56,30 @@ export class Auth0Service {
         display_name: displayName || name,
       });
       return organization.data as Auth0Organization;
-    } catch (error) {
+    } catch (error: any) {
       console.error("Failed to create organization:", error);
-      throw new Error("Failed to create organization");
+
+      // Handle specific Auth0 errors
+      if (error.statusCode === 409) {
+        throw new Error(
+          "Organization name already exists. Please choose a different name."
+        );
+      }
+
+      if (error.statusCode === 400) {
+        throw new Error(
+          "Invalid organization data. Please check the organization name and try again."
+        );
+      }
+
+      if (error.statusCode === 403) {
+        throw new Error("Insufficient permissions to create organization.");
+      }
+
+      // Fallback for other errors
+      const errorMessage =
+        error.message || error.body || "Unknown error occurred";
+      throw new Error(`Failed to create organization: ${errorMessage}`);
     }
   }
 
@@ -72,17 +93,37 @@ export class Auth0Service {
   ): Promise<void> {
     try {
       // First add the user to the organization
-      await this.management.organizations.addMembers(
-        { id: orgId },
-        { members: [userId] }
-      );
+      try {
+        await this.management.organizations.addMembers(
+          { id: orgId },
+          { members: [userId] }
+        );
+      } catch (memberError: any) {
+        // If user is already a member, that's okay - we'll continue to role assignment
+        if (memberError.statusCode !== 409) {
+          throw memberError;
+        }
+        console.log(
+          `User ${userId} is already a member of organization ${orgId}`
+        );
+      }
 
       // Then assign roles
       if (roles.length > 0) {
-        await this.management.organizations.addMemberRoles(
-          { id: orgId, user_id: userId },
-          { roles }
-        );
+        try {
+          await this.management.organizations.addMemberRoles(
+            { id: orgId, user_id: userId },
+            { roles }
+          );
+        } catch (roleError: any) {
+          // If user already has the roles, that's okay too
+          if (roleError.statusCode !== 409) {
+            throw roleError;
+          }
+          console.log(
+            `User ${userId} already has required roles in organization ${orgId}`
+          );
+        }
       }
     } catch (error) {
       console.error("Failed to add user to organization:", error);
@@ -101,6 +142,30 @@ export class Auth0Service {
       return organization.data as Auth0Organization;
     } catch (error) {
       console.error("Failed to get organization:", error);
+      return null;
+    }
+  }
+
+  /**
+   * Find organization by name
+   */
+  async findOrganizationByName(
+    name: string
+  ): Promise<Auth0Organization | null> {
+    try {
+      // Get all organizations and filter by name (Auth0 doesn't support name filtering directly)
+      const organizations = await this.management.organizations.getAll();
+
+      if (organizations.data && organizations.data.length > 0) {
+        const foundOrg = organizations.data.find(
+          (org) => org.name === name || org.display_name === name
+        );
+        return (foundOrg as Auth0Organization) || null;
+      }
+
+      return null;
+    } catch (error) {
+      console.error("Failed to find organization by name:", error);
       return null;
     }
   }

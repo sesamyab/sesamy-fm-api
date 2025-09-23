@@ -130,6 +130,11 @@ export const jwtMiddleware = createMiddleware(async (c, next) => {
     // Set the payload in context for use by route handlers
     c.set("jwtPayload", payload);
 
+    // Set organization ID if available
+    if (payload.org_id) {
+      c.set("orgId", payload.org_id);
+    }
+
     await next();
   } catch (error: any) {
     const problem = {
@@ -334,4 +339,24 @@ export const hasScopes = (
  */
 export const getOrganizationId = (payload: JWTPayload): string | null => {
   return payload.org_id || null;
+};
+
+/**
+ * Helper function to get organization ID from context variables
+ * Uses any type to work around Hono's type constraints
+ * Throws HTTPException if organization ID is not available
+ */
+export const getOrgIdFromContext = (c: any): string => {
+  const orgId = (c as any).get("orgId");
+  if (!orgId) {
+    const problem = {
+      type: "forbidden",
+      title: "Forbidden",
+      status: 403,
+      detail: "Organization context required. Please select an organization.",
+      instance: c.req.path,
+    };
+    throw new HTTPException(403, { message: JSON.stringify(problem) });
+  }
+  return orgId;
 };

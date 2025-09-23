@@ -10,9 +10,8 @@ import { relations } from "drizzle-orm";
 
 // Organizations table
 export const organizations = sqliteTable("organizations", {
-  id: text("id").primaryKey(),
+  id: text("id").primaryKey(), // This will be the Auth0 organization ID
   name: text("name").notNull(),
-  auth0OrgId: text("auth0_org_id").notNull().unique(),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

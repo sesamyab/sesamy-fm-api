@@ -18,3 +18,14 @@ export interface AuthContext {
     permissions: string[];
   };
 }
+
+// Define context variables that will be available via c.get() and c.set()
+export interface ContextVariables {
+  jwtPayload: JWTPayload;
+  orgId: string;
+}
+
+// Type for Hono context with our custom variables
+export type AppContext = {
+  Variables: ContextVariables;
+};

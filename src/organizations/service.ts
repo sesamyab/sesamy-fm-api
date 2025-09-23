@@ -6,7 +6,9 @@ import {
   type NewOrganization,
 } from "../database/schema";
 import { Auth0Service } from "../auth/auth0-service";
-import { v4 as uuidv4 } from "uuid";
+
+// Auth0 Role IDs
+const PODCAST_ADMIN_ROLE_ID = "Qh3bDMuHe_xDJPPXMa-WG";
 
 export class OrganizationService {
   constructor(
@@ -32,11 +34,9 @@ export class OrganizationService {
   }
 
   /**
-   * Get organization by Auth0 org ID
+   * Get organization by ID (which is the Auth0 organization ID)
    */
-  async getOrganizationByAuth0Id(
-    auth0OrgId: string
-  ): Promise<Organization | null> {
+  async getOrganizationById(id: string): Promise<Organization | null> {
     if (!this.db) {
       throw new Error("Database not available");
     }
@@ -44,7 +44,7 @@ export class OrganizationService {
     const result = await this.db
       .select()
       .from(organizations)
-      .where(eq(organizations.auth0OrgId, auth0OrgId))
+      .where(eq(organizations.id, id))
       .limit(1);
 
     return result[0] || null;
@@ -92,38 +92,110 @@ export class OrganizationService {
     }
 
     try {
-      // Create organization in Auth0
+      // Try to create organization in Auth0
       const auth0Org = await this.auth0Service.createOrganization(
         name,
         displayName
       );
 
-      // Add user to the organization with admin role
+      console.log(`Created organization in Auth0 with ID: ${auth0Org.id}`);
+
+      // Add user to the organization with Podcast Admin role
       await this.auth0Service.addUserToOrganization(auth0Org.id, userId, [
-        "podcasts:admin",
+        PODCAST_ADMIN_ROLE_ID,
       ]);
 
-      // Create organization in local database
-      const newOrg: NewOrganization = {
-        id: uuidv4(),
-        name: auth0Org.display_name || auth0Org.name,
-        auth0OrgId: auth0Org.id,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
+      console.log(`User ${userId} added to organization ${auth0Org.id}`);
 
-      const result = await this.db
-        .insert(organizations)
-        .values(newOrg)
-        .returning();
+      // Check if organization already exists in local database
+      let localOrg = await this.getOrganizationById(auth0Org.id);
+
+      if (!localOrg) {
+        // Create organization in local database
+        const newOrg: NewOrganization = {
+          id: auth0Org.id, // Use Auth0 ID directly
+          name: auth0Org.display_name || auth0Org.name,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString(),
+        };
+
+        const result = await this.db
+          .insert(organizations)
+          .values(newOrg)
+          .returning();
+
+        localOrg = result[0];
+      }
 
       return {
-        organization: result[0],
+        organization: localOrg,
         auth0_org: auth0Org,
       };
-    } catch (error) {
+    } catch (error: any) {
+      // If organization already exists in Auth0, find it and verify user membership
+      if (error.message && error.message.includes("already exists")) {
+        console.log(
+          `Organization '${name}' already exists in Auth0, attempting to find it...`
+        );
+
+        // Find the existing organization by name
+        const existingOrg = await this.auth0Service.findOrganizationByName(
+          name
+        );
+
+        if (existingOrg) {
+          console.log(`Found existing organization with ID: ${existingOrg.id}`);
+
+          // Verify the current user is a member of this organization
+          const userOrganizations =
+            await this.auth0Service.getUserOrganizations(userId);
+          const isMember = userOrganizations.some(
+            (org) => org.id === existingOrg.id
+          );
+
+          if (!isMember) {
+            throw new Error(
+              "You are not authorized to access this organization"
+            );
+          }
+
+          // User is a member, so create/update the organization in our database
+          let localOrg = await this.getOrganizationById(existingOrg.id);
+
+          if (!localOrg) {
+            // Create organization in local database
+            const newOrg: NewOrganization = {
+              id: existingOrg.id, // Use Auth0 ID directly
+              name: existingOrg.display_name || existingOrg.name,
+              createdAt: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
+            };
+
+            const result = await this.db
+              .insert(organizations)
+              .values(newOrg)
+              .returning();
+
+            localOrg = result[0];
+          }
+
+          return {
+            organization: localOrg,
+            auth0_org: existingOrg,
+          };
+        } else {
+          // If we can't find the organization, re-throw the original error
+          console.error(
+            `Could not find existing organization with name '${name}'`
+          );
+          throw error;
+        }
+      }
+
       console.error("Failed to create organization:", error);
-      throw new Error("Failed to create organization");
+      // Re-throw the error with the original message to preserve specific error details
+      const errorMessage = error.message || "Failed to create organization";
+      throw new Error(errorMessage);
     }
   }
 
@@ -132,7 +204,7 @@ export class OrganizationService {
    */
   async syncOrganization(auth0OrgId: string): Promise<Organization> {
     // Check if organization already exists locally
-    let org = await this.getOrganizationByAuth0Id(auth0OrgId);
+    let org = await this.getOrganizationById(auth0OrgId);
 
     if (org) {
       return org;
@@ -146,24 +218,33 @@ export class OrganizationService {
       throw new Error("Auth0 service not configured");
     }
 
-    // Fetch from Auth0 and create locally
-    const auth0Org = await this.auth0Service.getOrganization(auth0OrgId);
-    if (!auth0Org) {
-      throw new Error(`Organization ${auth0OrgId} not found in Auth0`);
+    try {
+      // Get organization details from Auth0
+      const auth0Org = await this.auth0Service.getOrganization(auth0OrgId);
+
+      if (!auth0Org) {
+        throw new Error(
+          `Organization with ID ${auth0OrgId} not found in Auth0`
+        );
+      }
+
+      // Create the organization locally
+      const newOrg: NewOrganization = {
+        id: auth0Org.id, // Use Auth0 ID directly
+        name: auth0Org.display_name || auth0Org.name,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+
+      const result = await this.db
+        .insert(organizations)
+        .values(newOrg)
+        .returning();
+
+      return result[0];
+    } catch (error) {
+      console.error("Error syncing organization:", error);
+      throw new Error("Failed to sync organization");
     }
-
-    const newOrg: NewOrganization = {
-      id: uuidv4(),
-      name: auth0Org.display_name || auth0Org.name,
-      auth0OrgId: auth0Org.id,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-
-    const result = await this.db
-      .insert(organizations)
-      .values(newOrg)
-      .returning();
-    return result[0];
   }
 }

@@ -204,6 +204,128 @@ components:
         - title
         - status
 
+    ImportShowFromRSS:
+      type: object
+      properties:
+        rssUrl:
+          type: string
+          format: uri
+          description: RSS feed URL to import from
+        maxEpisodes:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 100
+          description: Maximum number of episodes to import
+        skipExistingEpisodes:
+          type: boolean
+          default: false
+          description: Whether to skip episodes that already exist
+      required:
+        - rssUrl
+
+    ImportShowResponse:
+      type: object
+      properties:
+        taskId:
+          type: string
+          description: ID of the import task
+        workflowId:
+          type: string
+          description: Workflow ID for tracking the import process
+        message:
+          type: string
+          description: Success message
+      required:
+        - taskId
+        - workflowId
+        - message
+
+    RSSPreviewRequest:
+      type: object
+      properties:
+        rssUrl:
+          type: string
+          format: uri
+          description: RSS feed URL to preview
+      required:
+        - rssUrl
+
+    RSSPreviewResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+          description: Whether the preview was successful
+        data:
+          type: object
+          properties:
+            title:
+              type: string
+            description:
+              type: string
+            imageUrl:
+              type: string
+              format: uri
+              nullable: true
+            language:
+              type: string
+            categories:
+              type: array
+              items:
+                type: string
+            author:
+              type: string
+            totalEpisodes:
+              type: integer
+            episodes:
+              type: array
+              items:
+                type: object
+        errors:
+          type: array
+          items:
+            type: object
+            properties:
+              type:
+                type: string
+              message:
+                type: string
+              details:
+                type: object
+
+    ImageUpload:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        showId:
+          type: string
+          format: uuid
+        fileName:
+          type: string
+        fileSize:
+          type: integer
+          format: int64
+          minimum: 1
+        mimeType:
+          type: string
+        url:
+          type: string
+          format: uri
+        uploadedAt:
+          type: string
+          format: date-time
+      required:
+        - id
+        - showId
+        - fileName
+        - fileSize
+        - mimeType
+        - url
+        - uploadedAt
+
 paths:
   /:
     get:
@@ -388,6 +510,94 @@ paths:
               schema:
                 $ref: "#/components/schemas/Problem"
 
+  /shows/import:
+    post:
+      summary: Import show from RSS
+      description: Import a podcast show and its episodes from an RSS feed URL
+      tags:
+        - shows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ImportShowFromRSS"
+      responses:
+        "202":
+          description: Import task created successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImportShowResponse"
+        "400":
+          description: Invalid RSS URL or parsing error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /shows/preview-rss:
+    post:
+      summary: Preview RSS feed
+      description: Parse and preview an RSS feed without importing it. Returns the parsed show and episode data in JSON format with any validation errors.
+      tags:
+        - shows
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RSSPreviewRequest"
+      responses:
+        "200":
+          description: RSS feed parsed successfully (may include validation errors)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RSSPreviewResponse"
+        "400":
+          description: Invalid request or RSS URL format
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
   /shows/{show_id}:
     parameters:
       - name: show_id
@@ -451,6 +661,71 @@ paths:
           description: Show deleted successfully
         "404":
           description: Show not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+
+  /shows/{show_id}/image:
+    parameters:
+      - name: show_id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+
+    post:
+      summary: Upload show image
+      description: Upload an image file for a show
+      tags:
+        - shows
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              properties:
+                image:
+                  type: string
+                  format: binary
+                  description: Image file to upload
+              required:
+                - image
+      responses:
+        "200":
+          description: Image uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ImageUpload"
+        "400":
+          description: Invalid file or request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "403":
+          description: Forbidden
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "404":
+          description: Show not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Problem"
+        "500":
+          description: Internal server error
           content:
             application/json:
               schema:

@@ -208,7 +208,10 @@ export class AudioService {
       // Get the show to determine the language
       const { ShowRepository } = await import("../shows/repository.js");
       const showRepo = new ShowRepository(this.database);
-      const show = await showRepo.findById(episode.showId);
+      const show = await showRepo.findById(
+        episode.showId,
+        episode.organizationId
+      );
 
       // Use show language if available, otherwise fall back to environment variable or "en"
       const transcriptionLanguage =
@@ -389,7 +392,10 @@ export class AudioService {
     // Get the show to determine the language
     const { ShowRepository } = await import("../shows/repository.js");
     const showRepo = new ShowRepository(this.database);
-    const show = await showRepo.findById(episode.showId);
+    const show = await showRepo.findById(
+      episode.showId,
+      episode.organizationId
+    );
 
     // Use show language if available, otherwise fall back to environment variable or "en"
     const transcriptionLanguage =
