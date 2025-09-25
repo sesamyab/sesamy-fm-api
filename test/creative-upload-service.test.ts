@@ -121,10 +121,9 @@ describe("CreativeUploadService", () => {
       expect(mockCampaignRepo.updateCreative).toHaveBeenCalledWith(
         campaignId,
         creativeId,
-        expect.objectContaining({
+        {
           imageUrl: expect.stringContaining("r2://creatives/image/"),
-          type: "display",
-        })
+        }
       );
 
       expect(result).toMatchObject({

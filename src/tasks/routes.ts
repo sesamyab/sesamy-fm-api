@@ -2,7 +2,7 @@ import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { TaskService } from "./service.js";
-import { requireScopes } from "../auth/middleware.js";
+import { requireAuth } from "../auth/middleware.js";
 import { NotFoundError } from "../common/errors.js";
 
 // Task status enum
@@ -197,7 +197,7 @@ export const createTaskRoutes = (database?: D1Database) => {
   });
 
   // Apply authentication middleware - using colon notation to match user permissions
-  app.use("*", requireScopes(["podcast:read", "podcast:write"]));
+  app.use("*", requireAuth(["podcast:read", "podcast:write"]));
 
   // --------------------------------
   // POST /tasks

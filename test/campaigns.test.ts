@@ -1,4 +1,31 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
+
+// Mock using vi.hoisted to ensure it's available before module loading
+vi.hoisted(() => {
+  vi.stubGlobal('require', vi.fn((module: string) => {
+    if (module === './database/client') {
+      return {
+        getDatabase: () => ({}),
+      };
+    }
+    // For other modules, return empty object or throw
+    return {};
+  }));
+});
+
+// Mock all the necessary modules before importing
+vi.mock("../src/database/client", () => ({
+  getDatabase: vi.fn(() => ({})),
+}));
+
+vi.mock("../src/organizations/service", () => ({
+  OrganizationService: vi.fn().mockImplementation(() => ({})),
+}));
+
+vi.mock("../src/auth/auth0", () => ({
+  Auth0Service: vi.fn().mockImplementation(() => ({})),
+}));
+
 import { createApp } from "../src/app";
 
 describe("Campaign Creative Upload Routes", () => {
@@ -6,7 +33,8 @@ describe("Campaign Creative Upload Routes", () => {
 
   beforeAll(() => {
     // Mock database and services for testing
-    const mockDatabase = {} as D1Database;
+    // Pass undefined for database to avoid the problematic require call
+    const mockDatabase = undefined;
     const mockBucket = {} as R2Bucket;
 
     app = createApp(

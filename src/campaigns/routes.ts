@@ -18,10 +18,10 @@ import { CampaignService } from "./service";
 import { AudioService } from "../audio/service";
 import { CreativeUploadService } from "./creative-upload-service";
 import {
-  requireScopes,
+  requireAuth,
   hasPermissions,
   hasScopes,
-  getOrganizationId,
+  getOrgIdFromContext,
 } from "../auth/middleware";
 import { NotFoundError } from "../common/errors";
 import { JWTPayload } from "../auth/types";
@@ -71,7 +71,7 @@ export function createCampaignRoutes(
   const app = new OpenAPIHono();
 
   // Apply authentication middleware
-  app.use("*", requireScopes(["campaigns:read", "campaigns:write"]));
+  app.use("*", requireAuth(["campaigns:read", "campaigns:write"]));
 
   // --------------------------------
   // GET /campaigns
@@ -106,21 +106,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const query = c.req.valid("query");
 
@@ -170,21 +157,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const { campaign_id } = c.req.valid("param");
 
@@ -248,21 +222,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const body = c.req.valid("json");
 
@@ -319,21 +280,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const { campaign_id } = c.req.valid("param");
       const body = c.req.valid("json");
@@ -396,21 +344,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const { campaign_id } = c.req.valid("param");
       const body = c.req.valid("json");
@@ -460,21 +395,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const { campaign_id } = c.req.valid("param");
 
@@ -530,21 +452,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const { campaign_id } = c.req.valid("param");
 
@@ -614,21 +523,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const { campaign_id } = c.req.valid("param");
       const body = c.req.valid("json");
@@ -689,21 +585,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const { campaign_id, creative_id } = c.req.valid("param");
 
@@ -773,21 +656,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const { campaign_id, creative_id } = c.req.valid("param");
       const body = c.req.valid("json");
@@ -856,21 +726,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const { campaign_id, creative_id } = c.req.valid("param");
       const body = c.req.valid("json");
@@ -927,21 +784,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const { campaign_id, creative_id } = c.req.valid("param");
 
@@ -1007,21 +851,8 @@ export function createCampaignRoutes(
       },
     },
     async (c) => {
-      const payload = c.get("jwtPayload") as JWTPayload;
-
-      // Extract organization ID from JWT payload
-      const organizationId = getOrganizationId(payload);
-      if (!organizationId) {
-        const problem = {
-          type: "forbidden",
-          title: "Forbidden",
-          status: 403,
-          detail:
-            "Organization context required. Please select an organization.",
-          instance: c.req.path,
-        };
-        throw new HTTPException(403, { message: JSON.stringify(problem) });
-      }
+      // Extract organization ID from context variables (set by auth middleware)
+      const organizationId = getOrgIdFromContext(c);
 
       const { campaign_id } = c.req.valid("param");
 
@@ -1092,14 +923,14 @@ export function createCampaignRoutes(
         // Check auth
         const payload = c.get("jwtPayload") as JWTPayload;
         const hasWritePermission = hasPermissions(payload, ["campaigns:write"]);
-        const hasWriteScope = hasScopes(payload, ["campaigns.write"]);
+        const hasWriteScope = hasScopes(payload, ["campaigns:write"]);
         if (!hasWritePermission && !hasWriteScope) {
           const problem = {
             type: "forbidden",
             title: "Forbidden",
             status: 403,
             detail:
-              "Required permissions: campaigns:write or scope: campaigns.write",
+              "Required permissions: campaigns:write or scope: campaigns:write",
             instance: c.req.path,
           };
           throw new HTTPException(403, { message: JSON.stringify(problem) });
@@ -1209,14 +1040,14 @@ export function createCampaignRoutes(
         // Check auth
         const payload = c.get("jwtPayload") as JWTPayload;
         const hasWritePermission = hasPermissions(payload, ["campaigns:write"]);
-        const hasWriteScope = hasScopes(payload, ["campaigns.write"]);
+        const hasWriteScope = hasScopes(payload, ["campaigns:write"]);
         if (!hasWritePermission && !hasWriteScope) {
           const problem = {
             type: "forbidden",
             title: "Forbidden",
             status: 403,
             detail:
-              "Required permissions: campaigns:write or scope: campaigns.write",
+              "Required permissions: campaigns:write or scope: campaigns:write",
             instance: c.req.path,
           };
           throw new HTTPException(403, { message: JSON.stringify(problem) });
@@ -1326,14 +1157,14 @@ export function createCampaignRoutes(
         // Check auth
         const payload = c.get("jwtPayload") as JWTPayload;
         const hasWritePermission = hasPermissions(payload, ["campaigns:write"]);
-        const hasWriteScope = hasScopes(payload, ["campaigns.write"]);
+        const hasWriteScope = hasScopes(payload, ["campaigns:write"]);
         if (!hasWritePermission && !hasWriteScope) {
           const problem = {
             type: "forbidden",
             title: "Forbidden",
             status: 403,
             detail:
-              "Required permissions: campaigns:write or scope: campaigns.write",
+              "Required permissions: campaigns:write or scope: campaigns:write",
             instance: c.req.path,
           };
           throw new HTTPException(403, { message: JSON.stringify(problem) });

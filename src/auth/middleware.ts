@@ -173,7 +173,12 @@ export const authMiddleware = createMiddleware(async (c, next) => {
   });
 });
 
-export const requireScopes = (requiredScopes: string[]) => {
+/**
+ * Modern authentication middleware that checks permissions first, with scope fallback
+ * Prioritizes permission-based authorization but maintains backward compatibility with scopes
+ * @param required - Array of required permissions/scopes (e.g., ["campaigns:read", "campaigns:write"])
+ */
+export const requireAuth = (required: string[]) => {
   return createMiddleware(async (c, next) => {
     const payload = c.get("jwtPayload") as JWTPayload;
 
@@ -191,7 +196,21 @@ export const requireScopes = (requiredScopes: string[]) => {
       });
     }
 
-    // Extract scopes from either 'scope' (string) or 'scopes' (array) field
+    // First, try to check permissions (prioritize permissions over scopes)
+    const userPermissions = payload.permissions || [];
+    const hasRequiredPermission = required.some((scope: string) => {
+      // Convert scope format to permission format (e.g., "campaigns:read" -> "campaigns:read")
+      // or "campaigns.read" -> "campaigns:read"
+      const permissionName = scope.replace(".", ":");
+      return userPermissions.includes(permissionName);
+    });
+
+    if (hasRequiredPermission) {
+      await next();
+      return;
+    }
+
+    // Fall back to scope checking if permission check fails
     let userScopes: string[] = [];
     if (payload.scope && typeof payload.scope === "string") {
       // OAuth2 standard: space-separated string
@@ -201,7 +220,7 @@ export const requireScopes = (requiredScopes: string[]) => {
       userScopes = payload.scopes;
     }
 
-    const hasRequiredScope = requiredScopes.some((scope) =>
+    const hasRequiredScope = required.some((scope: string) =>
       userScopes.includes(scope)
     );
 
@@ -210,9 +229,13 @@ export const requireScopes = (requiredScopes: string[]) => {
         type: "forbidden",
         title: "Forbidden",
         status: 403,
-        detail: `Required scopes: ${requiredScopes.join(
+        detail: `Required permissions: ${required
+          .map((s: string) => s.replace(".", ":"))
+          .join(", ")} OR scopes: ${required.join(
           ", "
-        )}. User scopes: ${userScopes.join(", ")}`,
+        )}. User permissions: ${userPermissions.join(
+          ", "
+        )}, User scopes: ${userScopes.join(", ")}`,
         instance: c.req.path,
       };
 
