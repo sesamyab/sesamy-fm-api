@@ -31,12 +31,25 @@ export class TaskRepository {
     return result[0] || null;
   }
 
+  async findByIdAndOrganization(
+    id: number,
+    organizationId: string
+  ): Promise<Task | null> {
+    const result = await this.db
+      .select()
+      .from(tasks)
+      .where(and(eq(tasks.id, id), eq(tasks.organizationId, organizationId)));
+
+    return result[0] || null;
+  }
+
   async findByStatus(
     status?: string,
     limit = 10,
     offset = 0,
     sortBy = "created_at",
-    sortOrder = "desc"
+    sortOrder = "desc",
+    organizationId?: string
   ): Promise<Task[]> {
     // Determine the sort column
     const sortColumn =
@@ -54,11 +67,20 @@ export class TaskRepository {
     const orderByColumn =
       sortOrder === "asc" ? asc(sortColumn) : desc(sortColumn);
 
+    // Build where conditions
+    let whereConditions = [];
     if (status) {
+      whereConditions.push(eq(tasks.status, status));
+    }
+    if (organizationId) {
+      whereConditions.push(eq(tasks.organizationId, organizationId));
+    }
+
+    if (whereConditions.length > 0) {
       return await this.db
         .select()
         .from(tasks)
-        .where(eq(tasks.status, status))
+        .where(and(...whereConditions))
         .orderBy(orderByColumn)
         .limit(limit)
         .offset(offset);

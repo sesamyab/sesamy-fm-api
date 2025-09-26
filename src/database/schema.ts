@@ -102,6 +102,9 @@ export const tasks = sqliteTable("tasks", {
   step: text("step"), // Current step description (e.g., "2/10 Encoding audio for processing")
   workflowId: text("workflow_id"), // Associated workflow instance ID
   workflowInstanceId: text("workflow_instance_id"), // Cloudflare workflow instance ID
+  organizationId: text("organization_id")
+    .notNull()
+    .references(() => organizations.id, { onDelete: "cascade" }),
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -182,6 +185,7 @@ export const campaignShows = sqliteTable("campaign_shows", {
 export const organizationsRelations = relations(organizations, ({ many }) => ({
   shows: many(shows),
   campaigns: many(campaigns),
+  tasks: many(tasks),
 }));
 
 export const showsRelations = relations(shows, ({ one, many }) => ({
@@ -226,6 +230,10 @@ export const imageUploadsRelations = relations(imageUploads, ({ one }) => ({
 }));
 
 export const tasksRelations = relations(tasks, ({ one }) => ({
+  organization: one(organizations, {
+    fields: [tasks.organizationId],
+    references: [organizations.id],
+  }),
   workflow: one(workflows, {
     fields: [tasks.id],
     references: [workflows.taskId],

@@ -155,14 +155,13 @@ export function registerShowRoutes(
       const payload = c.get("jwtPayload") as JWTPayload;
 
       const hasReadPermission = hasPermissions(payload, ["podcast:read"]);
-      const hasReadScope = hasScopes(payload, ["podcast.read"]);
 
-      if (!hasReadPermission && !hasReadScope) {
+      if (!hasReadPermission) {
         const problem = {
           type: "forbidden",
           title: "Forbidden",
           status: 403,
-          detail: "Required permissions: podcast:read OR scopes: podcast.read",
+          detail: "Required permissions: podcast:read",
           instance: c.req.path,
         };
         throw new HTTPException(403, { message: JSON.stringify(problem) });
@@ -348,12 +347,15 @@ export function registerShowRoutes(
         );
 
         // Create import task
-        const task = await taskService.createTask("import_show" as any, {
-          rssUrl: importData.rssUrl,
-          maxEpisodes: importData.maxEpisodes || 100,
-          skipExistingEpisodes: importData.skipExistingEpisodes || false,
-          organizationId: organizationId,
-        });
+        const task = await taskService.createTask(
+          "import_show" as any,
+          {
+            rssUrl: importData.rssUrl,
+            maxEpisodes: importData.maxEpisodes || 100,
+            skipExistingEpisodes: importData.skipExistingEpisodes || false,
+          },
+          organizationId
+        );
 
         console.log(
           `Created import task ${task.id} for RSS: ${importData.rssUrl}`

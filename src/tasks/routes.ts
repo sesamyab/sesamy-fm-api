@@ -2,8 +2,9 @@ import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { TaskService } from "./service.js";
-import { requireAuth } from "../auth/middleware.js";
+import { requireAuth, getOrgIdFromContext } from "../auth/middleware.js";
 import { NotFoundError } from "../common/errors.js";
+import { JWTPayload } from "../auth/types.js";
 
 // Task status enum
 const TaskStatusSchema = z.enum(["pending", "processing", "done", "failed"]);
@@ -204,8 +205,13 @@ export const createTaskRoutes = (database?: D1Database) => {
   // --------------------------------
   app.openapi(createTaskRoute, async (c) => {
     const body = c.req.valid("json");
+    const organizationId = getOrgIdFromContext(c);
 
-    const task = await taskService.createTask(body.type, body.payload);
+    const task = await taskService.createTask(
+      body.type,
+      body.payload,
+      organizationId
+    );
     return c.json(serializeTask(task), 201);
   });
 
@@ -214,13 +220,15 @@ export const createTaskRoutes = (database?: D1Database) => {
   // --------------------------------
   app.openapi(getTasksRoute, async (c) => {
     const query = c.req.valid("query");
+    const organizationId = getOrgIdFromContext(c);
 
     const tasks = await taskService.getTasks(
       query.status,
       query.limit,
       query.offset,
       query.sortBy,
-      query.sortOrder
+      query.sortOrder,
+      organizationId
     );
 
     return c.json(tasks.map(serializeTask));
@@ -231,8 +239,9 @@ export const createTaskRoutes = (database?: D1Database) => {
   // --------------------------------
   app.openapi(getTaskRoute, async (c) => {
     const { task_id } = c.req.valid("param");
+    const organizationId = getOrgIdFromContext(c);
 
-    const task = await taskService.getTask(task_id);
+    const task = await taskService.getTask(task_id, organizationId);
 
     if (!task) {
       throw new NotFoundError(`Task with ID ${task_id} not found`);
@@ -246,9 +255,10 @@ export const createTaskRoutes = (database?: D1Database) => {
   // --------------------------------
   app.openapi(retryTaskRoute, async (c) => {
     const { task_id } = c.req.valid("param");
+    const organizationId = getOrgIdFromContext(c);
 
     try {
-      const task = await taskService.retryTask(task_id);
+      const task = await taskService.retryTask(task_id, organizationId);
       return c.json(serializeTask(task));
     } catch (error) {
       if (error instanceof Error) {

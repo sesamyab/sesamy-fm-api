@@ -2,15 +2,18 @@ import { describe, it, expect, beforeAll, vi } from "vitest";
 
 // Mock using vi.hoisted to ensure it's available before module loading
 vi.hoisted(() => {
-  vi.stubGlobal('require', vi.fn((module: string) => {
-    if (module === './database/client') {
-      return {
-        getDatabase: () => ({}),
-      };
-    }
-    // For other modules, return empty object or throw
-    return {};
-  }));
+  vi.stubGlobal(
+    "require",
+    vi.fn((module: string) => {
+      if (module === "./database/client") {
+        return {
+          getDatabase: () => ({}),
+        };
+      }
+      // For other modules, return empty object or throw
+      return {};
+    })
+  );
 });
 
 // Mock all the necessary modules before importing

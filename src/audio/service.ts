@@ -234,13 +234,17 @@ export class AudioService {
       );
 
       // Create an audio_processing task with the required payload
-      const task = await taskService.createTask("audio_processing", {
-        episodeId,
-        audioR2Key, // Use R2 key instead of signed URL
-        chunkDuration,
-        encodingFormats: ["mp3_128"], // Use MP3 format with auto-adjusted bitrate based on mono/stereo
-        transcriptionLanguage,
-      });
+      const task = await taskService.createTask(
+        "audio_processing",
+        {
+          episodeId,
+          audioR2Key, // Use R2 key instead of signed URL
+          chunkDuration,
+          encodingFormats: ["mp3_128"], // Use MP3 format with auto-adjusted bitrate based on mono/stereo
+          transcriptionLanguage,
+        },
+        episode.organizationId
+      );
 
       console.log(
         `Created audio processing task ${task.id} for episode ${episodeId}`
@@ -435,7 +439,11 @@ export class AudioService {
     };
 
     // Create an audio_processing task
-    const task = await taskService.createTask("audio_processing", payload);
+    const task = await taskService.createTask(
+      "audio_processing",
+      payload,
+      episode.organizationId
+    );
 
     console.log(
       `Created audio processing task ${task.id} for episode ${episodeId} using ${transcriptionModel} (${payload.chunkDuration}s chunks) with language ${transcriptionLanguage}`

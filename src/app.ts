@@ -37,12 +37,8 @@ export function createApp(
   r2AccessKeyId?: string,
   r2SecretAccessKey?: string,
   r2Endpoint?: string,
-  ai?: Ai,
-  encodingContainer?: DurableObjectNamespace,
   audioProcessingWorkflow?: Workflow,
   importShowWorkflow?: Workflow,
-  awsLambdaUrl?: string,
-  awsApiKey?: string,
   auth0Domain?: string,
   auth0ClientId?: string,
   auth0ClientSecret?: string

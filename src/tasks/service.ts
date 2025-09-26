@@ -32,12 +32,17 @@ export class TaskService {
     );
   }
 
-  async createTask(type: TaskType, payload?: TaskPayload): Promise<Task> {
+  async createTask(
+    type: TaskType,
+    payload?: TaskPayload,
+    organizationId?: string
+  ): Promise<Task> {
     const now = new Date().toISOString();
     const task = await this.repository.create({
       type,
       status: "pending",
       attempts: 0,
+      organizationId,
       createdAt: now,
       updatedAt: now,
       payload: payload ? JSON.stringify(payload) : undefined,
@@ -66,7 +71,10 @@ export class TaskService {
     return task;
   }
 
-  async getTask(id: number): Promise<Task | null> {
+  async getTask(id: number, organizationId?: string): Promise<Task | null> {
+    if (organizationId) {
+      return await this.repository.findByIdAndOrganization(id, organizationId);
+    }
     return await this.repository.findById(id);
   }
 
@@ -75,19 +83,23 @@ export class TaskService {
     limit = 10,
     offset = 0,
     sortBy = "created_at",
-    sortOrder = "desc"
+    sortOrder = "desc",
+    organizationId?: string
   ): Promise<Task[]> {
     return await this.repository.findByStatus(
       status,
       limit,
       offset,
       sortBy,
-      sortOrder
+      sortOrder,
+      organizationId
     );
   }
 
-  async retryTask(id: number): Promise<Task> {
-    const task = await this.repository.findById(id);
+  async retryTask(id: number, organizationId?: string): Promise<Task> {
+    const task = organizationId
+      ? await this.repository.findByIdAndOrganization(id, organizationId)
+      : await this.repository.findById(id);
     if (!task) {
       throw new Error("Task not found");
     }

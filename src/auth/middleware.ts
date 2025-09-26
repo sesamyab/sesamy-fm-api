@@ -155,6 +155,7 @@ export const jwtMiddleware = createMiddleware(async (c, next) => {
 export const authMiddleware = createMiddleware(async (c, next) => {
   // First verify the JWT
   await jwtMiddleware(c, async () => {
+    console.log("JWT verified in authMiddleware");
     const payload = c.get("jwtPayload") as JWTPayload;
 
     // Check for organization context
