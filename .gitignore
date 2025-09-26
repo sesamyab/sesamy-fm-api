@@ -49,3 +49,6 @@ drizzle/meta/
 
 # Ignore test output
 *.test-output
+
+# Wrangler
+.wrangler/
