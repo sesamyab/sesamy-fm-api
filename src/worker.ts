@@ -52,7 +52,9 @@ export default {
       env.R2_ENDPOINT,
       env.AUDIO_PROCESSING_WORKFLOW,
       env.IMPORT_SHOW_WORKFLOW,
-      env.AWS_LAMBDA_ENCODING_URL
+      env.AUTH0_DOMAIN,
+      env.AUTH0_CLIENT_ID,
+      env.AUTH0_CLIENT_SECRET
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;

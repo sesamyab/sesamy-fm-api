@@ -91,9 +91,4 @@ storage.all("/file", async (c) => {
   }
 });
 
-// Health check endpoint
-storage.get("/health", async (c) => {
-  return c.json({ status: "ok", service: "storage" });
-});
-
 export default storage;
