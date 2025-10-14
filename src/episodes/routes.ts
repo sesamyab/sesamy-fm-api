@@ -355,7 +355,8 @@ export function registerEpisodeRoutes(
   episodeService: EpisodeService,
   audioService?: AudioService,
   imageService?: ImageService,
-  bucket?: R2Bucket
+  bucket?: R2Bucket,
+  ttsGenerationWorkflow?: Workflow
 ) {
   // --------------------------------
   // GET /shows/{show_id}/episodes
@@ -482,6 +483,45 @@ export function registerEpisodeRoutes(
         episodeData,
         organizationId
       );
+
+      // If scriptUrl is provided, create a TTS generation task
+      if (episodeData.scriptUrl && audioService && ttsGenerationWorkflow) {
+        try {
+          // Import TaskService
+          const { TaskService } = await import("../tasks/service.js");
+          
+          // Get the database from audioService (we need to access it)
+          const database = (audioService as any).database;
+          
+          // Create a TaskService instance with TTS workflow binding
+          const taskService = new TaskService(
+            database,
+            undefined, // audioProcessingWorkflow
+            undefined, // importShowWorkflow
+            ttsGenerationWorkflow
+          );
+          
+          // Create a TTS generation task
+          const ttsTask = await taskService.createTask(
+            "tts_generation",
+            {
+              episodeId: episode.id,
+              scriptUrl: episodeData.scriptUrl,
+              voice: "shimmer", // Default voice
+              model: "@cf/deepgram/aura-1",
+              organizationId,
+            },
+            organizationId
+          );
+
+          console.log(
+            `Created TTS generation task ${ttsTask.id} for episode ${episode.id}`
+          );
+        } catch (ttsError) {
+          // Log the error but don't fail the episode creation
+          console.error("Failed to create TTS generation task:", ttsError);
+        }
+      }
 
       // Sign URLs if they have r2:// URLs
       let signedEpisode = await signAudioUrlInEpisode(episode, audioService);

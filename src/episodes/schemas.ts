@@ -10,6 +10,7 @@ export const CreateEpisodeSchema = z.object({
   imageUrl: z.nullable(z.string().url()).optional(),
   audioUrl: z.nullable(z.string().url()).optional(),
   transcriptUrl: z.nullable(z.string().url()).optional(),
+  scriptUrl: z.nullable(z.string().url()).optional(), // URL to script text for TTS generation
   duration: z.number().int().positive().nullable().optional(),
   episodeNumber: z.number().int().nonnegative().nullable().optional(),
   seasonNumber: z.number().int().nonnegative().nullable().optional(),

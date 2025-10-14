@@ -58,6 +58,11 @@ name = "import-show-workflow"
 binding = "IMPORT_SHOW_WORKFLOW" 
 class_name = "ImportShowWorkflow"
 
+[[workflows]]
+name = "tts-generation-workflow"
+binding = "TTS_GENERATION_WORKFLOW"
+class_name = "TtsGenerationWorkflow"
+
 # Durable Objects bindings
 [[durable_objects.bindings]]
 class_name = "EncodingContainer"
