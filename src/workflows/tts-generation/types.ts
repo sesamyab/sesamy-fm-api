@@ -6,7 +6,7 @@ export const TtsGenerationParamsSchema = z.object({
   scriptUrl: z.string().url(), // URL to the script text
   taskId: z.string().optional(),
   workflowId: z.string().optional(),
-  voice: z.string().default("shimmer"), // Deepgram Aura voice
+  voice: z.string().default("luna"),
   model: z.string().default("@cf/deepgram/aura-1"), // TTS model
   organizationId: z.string().optional(),
 });
@@ -27,15 +27,19 @@ export const WorkflowStateSchema = z.object({
 
 export type WorkflowState = z.infer<typeof WorkflowStateSchema>;
 
-// Environment interface for TTS generation
-export interface Env {
-  DATABASE: D1Database;
-  PODCAST_SERVICE_ASSETS: R2Bucket;
+// Enhanced workflow environment bindings for TTS generation workflow
+export type Env = {
+  DB: D1Database;
+  BUCKET: R2Bucket;
   AI: Ai;
+  TTS_GENERATION_WORKFLOW: Workflow;
+  // Secrets
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
   R2_ENDPOINT: string;
-}
+  STORAGE_SIGNATURE_SECRET?: string;
+  SERVICE_BASE_URL?: string; // Base URL for the service (e.g., https://your-worker.workers.dev)
+};
 
 // Result from TTS generation step
 export const TtsGenerationResultSchema = z.object({

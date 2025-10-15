@@ -11,8 +11,9 @@ const uploadAudioRoute = createRoute({
   method: "post",
   path: "/shows/{show_id}/episodes/{episode_id}/audio",
   tags: ["audio"],
-  summary: "Upload audio file",
-  description: "Upload an audio file for an episode",
+  summary: "Upload audio or script file",
+  description:
+    "Upload an audio file or markdown script file for an episode. If a markdown file is uploaded, it will trigger TTS generation.",
   request: {
     params: AudioParamsSchema,
     body: {
@@ -24,7 +25,8 @@ const uploadAudioRoute = createRoute({
               audio: {
                 type: "string",
                 format: "binary",
-                description: "Audio file to upload",
+                description:
+                  "Audio file to upload (mp3, wav, etc.) or markdown script file (.md) for TTS generation",
               },
             },
             required: ["audio"],
@@ -40,7 +42,7 @@ const uploadAudioRoute = createRoute({
           schema: AudioUploadSchema,
         },
       },
-      description: "Audio uploaded successfully",
+      description: "Audio uploaded successfully or TTS generation started",
     },
     404: {
       description: "Episode not found",
@@ -116,22 +118,130 @@ export function registerAudioRoutes(
         throw new HTTPException(400, { message: JSON.stringify(problem) });
       }
 
-      // Convert File to Buffer
-      const buffer = Buffer.from(await audioFile.arrayBuffer());
+      // Check if it's a markdown file
+      const isMarkdown =
+        audioFile.type === "text/markdown" ||
+        audioFile.name.endsWith(".md") ||
+        audioFile.name.endsWith(".markdown");
 
-      const fileData = {
-        fileName: audioFile.name,
-        fileSize: audioFile.size,
-        mimeType: audioFile.type,
-        buffer,
-      };
+      if (isMarkdown) {
+        // Handle markdown file - store as script and trigger TTS
+        console.log(
+          `Markdown file detected: ${audioFile.name}, triggering TTS workflow`
+        );
 
-      const upload = await audioService.uploadAudio(
-        show_id,
-        episode_id,
-        fileData
-      );
-      return c.json(upload, 201);
+        // Convert File to Buffer
+        const buffer = Buffer.from(await audioFile.arrayBuffer());
+
+        // Store the markdown file in R2
+        const scriptId = (await import("uuid")).v4();
+        const scriptKey = `scripts/${show_id}/${episode_id}/${scriptId}/${audioFile.name}`;
+
+        // Upload to R2
+        if (audioService["bucket"]) {
+          await audioService["bucket"].put(scriptKey, buffer, {
+            httpMetadata: {
+              contentType: audioFile.type || "text/markdown",
+            },
+          });
+
+          const scriptUrl = `r2://${scriptKey}`;
+
+          // Update episode with scriptUrl
+          const episodeRepo = audioService["episodeRepo"];
+          await episodeRepo.update(show_id, episode_id, {
+            scriptUrl: scriptUrl,
+          });
+
+          // Generate a presigned URL for the TTS workflow to fetch
+          let accessibleScriptUrl = scriptUrl;
+          if (audioService["presignedUrlGenerator"]) {
+            try {
+              accessibleScriptUrl = await audioService[
+                "presignedUrlGenerator"
+              ].generatePresignedUrl(
+                "podcast-service-assets",
+                scriptKey,
+                3600 // 1 hour
+              );
+            } catch (error) {
+              console.warn(
+                "Failed to generate presigned URL for script:",
+                error
+              );
+            }
+          }
+
+          // Create TTS generation task
+          try {
+            const { TaskService } = await import("../tasks/service.js");
+            const database = audioService["database"];
+            const organizationId = payload.org_id;
+
+            // Get TTS workflow binding from context if available
+            const ttsWorkflow = (c.env as any)?.TTS_GENERATION_WORKFLOW;
+
+            const taskService = new TaskService(
+              database,
+              undefined, // audioProcessingWorkflow
+              undefined, // importShowWorkflow
+              ttsWorkflow
+            );
+
+            const ttsTask = await taskService.createTask(
+              "tts_generation",
+              {
+                episodeId: episode_id,
+                scriptUrl: accessibleScriptUrl,
+                model: "@cf/deepgram/aura-1",
+                organizationId,
+              },
+              organizationId
+            );
+
+            console.log(
+              `Created TTS generation task ${ttsTask.id} for episode ${episode_id}`
+            );
+          } catch (ttsError) {
+            console.error("Failed to create TTS generation task:", ttsError);
+          }
+
+          // Return a success response indicating TTS is starting
+          return c.json(
+            {
+              id: scriptId,
+              episodeId: episode_id,
+              fileName: audioFile.name,
+              fileSize: audioFile.size,
+              mimeType: audioFile.type || "text/markdown",
+              url: scriptUrl,
+              uploadedAt: new Date().toISOString(),
+              message: "Script uploaded successfully. TTS generation started.",
+            },
+            201
+          );
+        } else {
+          throw new Error("Storage service not available");
+        }
+      } else {
+        // Handle regular audio file
+        // Convert File to Buffer
+        const buffer = Buffer.from(await audioFile.arrayBuffer());
+
+        const fileData = {
+          fileName: audioFile.name,
+          fileSize: audioFile.size,
+          mimeType: audioFile.type,
+          buffer,
+        };
+
+        const upload = await audioService.uploadAudio(
+          show_id,
+          episode_id,
+          fileData
+        );
+        return c.json(upload, 201);
+      }
     } catch (error) {
       if (error instanceof NotFoundError) {
         const problem = {

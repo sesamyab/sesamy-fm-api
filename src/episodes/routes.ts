@@ -83,6 +83,18 @@ async function signAudioUrlInEpisode(
   return episode;
 }
 
+// Utility function to sign scriptUrl in episode data
+// Note: Script URLs are now accessed via the /script endpoint with bearer auth
+// So we don't need to sign them - just return the episode as-is
+async function signScriptUrlInEpisode(
+  episode: any,
+  audioService?: AudioService
+) {
+  // Scripts are now accessed via authenticated API endpoint
+  // No need to generate signed URLs
+  return episode;
+}
+
 // Get episodes for a show
 const getEpisodesRoute = createRoute({
   method: "get",
@@ -350,6 +362,86 @@ const getEpisodeTranscriptRoute = createRoute({
   security: [{ Bearer: [] }],
 });
 
+// Get episode script
+const getEpisodeScriptRoute = createRoute({
+  method: "get",
+  path: "/shows/{show_id}/episodes/{episode_id}/script",
+  tags: ["episodes"],
+  summary: "Get episode script",
+  description: "Get the script of an episode in markdown format",
+  request: {
+    params: EpisodeParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Script retrieved successfully",
+      content: {
+        "text/markdown": {
+          schema: {
+            type: "string",
+          },
+        },
+      },
+    },
+    404: {
+      description: "Episode or script not found",
+    },
+    503: {
+      description: "Script storage not available",
+    },
+  },
+  security: [{ Bearer: [] }],
+});
+
+// Update episode script
+const putEpisodeScriptRoute = createRoute({
+  method: "put",
+  path: "/shows/{show_id}/episodes/{episode_id}/script",
+  tags: ["episodes"],
+  summary: "Update episode script",
+  description: "Update or create the script for an episode",
+  request: {
+    params: EpisodeParamsSchema,
+    body: {
+      content: {
+        "text/markdown": {
+          schema: {
+            type: "string",
+          },
+        },
+      },
+    },
+  },
+  responses: {
+    200: {
+      description: "Script updated successfully",
+      content: {
+        "application/json": {
+          schema: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              scriptUrl: { type: "string" },
+              message: { type: "string" },
+              taskId: {
+                type: "number",
+                description: "TTS generation task ID (if started)",
+              },
+            },
+          },
+        },
+      },
+    },
+    404: {
+      description: "Episode not found",
+    },
+    503: {
+      description: "Script storage not available",
+    },
+  },
+  security: [{ Bearer: [] }],
+});
+
 export function registerEpisodeRoutes(
   app: OpenAPIHono,
   episodeService: EpisodeService,
@@ -386,13 +478,17 @@ export function registerEpisodeRoutes(
       pagination
     );
 
-    // Sign audioUrl and imageUrl in episodes if they have r2:// URLs
+    // Sign audioUrl, imageUrl, and scriptUrl in episodes if they have r2:// URLs
     const signedEpisodes = await Promise.all(
       episodes.map(async (episode) => {
         let signedEpisode = await signAudioUrlInEpisode(episode, audioService);
         signedEpisode = await signImageUrlInEpisode(
           signedEpisode,
           imageService
+        );
+        signedEpisode = await signScriptUrlInEpisode(
+          signedEpisode,
+          audioService
         );
         return signedEpisode;
       })
@@ -436,9 +532,10 @@ export function registerEpisodeRoutes(
       throw new HTTPException(404, { message: JSON.stringify(problem) });
     }
 
-    // Sign audioUrl and imageUrl if they have r2:// URLs
+    // Sign audioUrl, imageUrl, and scriptUrl if they have r2:// URLs
     let signedEpisode = await signAudioUrlInEpisode(episode, audioService);
     signedEpisode = await signImageUrlInEpisode(signedEpisode, imageService);
+    signedEpisode = await signScriptUrlInEpisode(signedEpisode, audioService);
 
     return c.json(signedEpisode);
   });
@@ -489,10 +586,10 @@ export function registerEpisodeRoutes(
         try {
           // Import TaskService
           const { TaskService } = await import("../tasks/service.js");
-          
+
           // Get the database from audioService (we need to access it)
           const database = (audioService as any).database;
-          
+
           // Create a TaskService instance with TTS workflow binding
           const taskService = new TaskService(
             database,
@@ -500,15 +597,13 @@ export function registerEpisodeRoutes(
             undefined, // importShowWorkflow
             ttsGenerationWorkflow
           );
-          
+
           // Create a TTS generation task
           const ttsTask = await taskService.createTask(
             "tts_generation",
             {
               episodeId: episode.id,
               scriptUrl: episodeData.scriptUrl,
-              voice: "shimmer", // Default voice
-              model: "@cf/deepgram/aura-1",
               organizationId,
             },
             organizationId
@@ -526,6 +621,7 @@ export function registerEpisodeRoutes(
       // Sign URLs if they have r2:// URLs
       let signedEpisode = await signAudioUrlInEpisode(episode, audioService);
       signedEpisode = await signImageUrlInEpisode(signedEpisode, imageService);
+      signedEpisode = await signScriptUrlInEpisode(signedEpisode, audioService);
 
       return c.json(signedEpisode, 201);
     } catch (error) {
@@ -574,6 +670,7 @@ export function registerEpisodeRoutes(
       // Sign URLs if they have r2:// URLs
       let signedEpisode = await signAudioUrlInEpisode(episode, audioService);
       signedEpisode = await signImageUrlInEpisode(signedEpisode, imageService);
+      signedEpisode = await signScriptUrlInEpisode(signedEpisode, audioService);
 
       return c.json(signedEpisode);
     } catch (error) {
@@ -618,6 +715,7 @@ export function registerEpisodeRoutes(
       // Sign URLs if they have r2:// URLs
       let signedEpisode = await signAudioUrlInEpisode(episode, audioService);
       signedEpisode = await signImageUrlInEpisode(signedEpisode, imageService);
+      signedEpisode = await signScriptUrlInEpisode(signedEpisode, audioService);
 
       return c.json(signedEpisode);
     } catch (error) {
@@ -900,6 +998,299 @@ export function registerEpisodeRoutes(
         title: "Internal Server Error",
         status: 500,
         detail: "Failed to retrieve transcript",
+        instance: c.req.path,
+      };
+      throw new HTTPException(500, { message: JSON.stringify(problem) });
+    }
+  });
+
+  // GET /shows/{show_id}/episodes/{episode_id}/script
+  // --------------------------------
+  app.openapi(getEpisodeScriptRoute, async (c) => {
+    // Check auth - look for permissions first, then fall back to scopes
+    const payload = c.get("jwtPayload") as JWTPayload;
+
+    const hasReadPermission = hasPermissions(payload, ["podcast:read"]);
+    const hasReadScope = hasScopes(payload, ["podcast.read"]);
+
+    if (!hasReadPermission && !hasReadScope) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Required permissions: podcast:read OR scopes: podcast.read",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
+    if (!bucket) {
+      const problem = {
+        type: "service_unavailable",
+        title: "Service Unavailable",
+        status: 503,
+        detail: "Script storage service is not available",
+        instance: c.req.path,
+      };
+      throw new HTTPException(503, { message: JSON.stringify(problem) });
+    }
+
+    const { show_id, episode_id } = c.req.valid("param");
+
+    try {
+      // First, get the episode to check if script exists
+      const episode = await episodeService.getEpisodeById(show_id, episode_id);
+
+      if (!episode || episode.showId !== show_id) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Episode not found",
+          instance: c.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      if (!episode.scriptUrl) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Script not available for this episode",
+          instance: c.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      // Extract R2 key from script URL
+      // Format: https://podcast-media.sesamy.dev/scripts/org-id/show-id/episode-id/script.md
+      // or r2://scripts/org-id/show-id/episode-id/script.md
+      let scriptKey: string;
+      if (episode.scriptUrl.startsWith("r2://")) {
+        scriptKey = episode.scriptUrl.replace("r2://", "");
+      } else {
+        // Extract key from full URL
+        const url = new URL(episode.scriptUrl);
+        const pathSegments = url.pathname.split("/");
+        // Find scripts segment and get everything after it
+        const scriptsIndex = pathSegments.indexOf("scripts");
+        if (scriptsIndex === -1) {
+          throw new Error("Invalid script URL format");
+        }
+        scriptKey = pathSegments.slice(scriptsIndex).join("/");
+      }
+
+      // Fetch script from R2
+      const scriptObject = await bucket.get(scriptKey);
+
+      if (!scriptObject) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Script file not found in storage",
+          instance: c.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      const scriptText = await scriptObject.text();
+
+      // Always return as markdown with proper headers
+      return new Response(scriptText, {
+        headers: {
+          "Content-Type": "text/markdown; charset=utf-8",
+          "Cache-Control": "private, max-age=3600", // Cache for 1 hour (private because it's authenticated)
+          "Content-Disposition": `inline; filename="${episode.id}-script.md"`,
+        },
+      });
+    } catch (error: any) {
+      if (error instanceof HTTPException) {
+        throw error;
+      }
+
+      console.error("Failed to fetch script:", error);
+
+      if (error.message?.includes("not found")) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Episode or script not found",
+          instance: c.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      const problem = {
+        type: "internal_server_error",
+        title: "Internal Server Error",
+        status: 500,
+        detail: "Failed to retrieve script",
+        instance: c.req.path,
+      };
+      throw new HTTPException(500, { message: JSON.stringify(problem) });
+    }
+  });
+
+  // PUT /shows/{show_id}/episodes/{episode_id}/script
+  // --------------------------------
+  app.openapi(putEpisodeScriptRoute, async (c) => {
+    // Check auth - look for permissions first, then fall back to scopes
+    const payload = c.get("jwtPayload") as JWTPayload;
+
+    const hasWritePermission = hasPermissions(payload, ["podcast:write"]);
+    const hasWriteScope = hasScopes(payload, ["podcast.write"]);
+
+    if (!hasWritePermission && !hasWriteScope) {
+      const problem = {
+        type: "forbidden",
+        title: "Forbidden",
+        status: 403,
+        detail: "Required permissions: podcast:write OR scopes: podcast.write",
+        instance: c.req.path,
+      };
+      throw new HTTPException(403, { message: JSON.stringify(problem) });
+    }
+
+    if (!bucket) {
+      const problem = {
+        type: "service_unavailable",
+        title: "Service Unavailable",
+        status: 503,
+        detail: "Script storage service is not available",
+        instance: c.req.path,
+      };
+      throw new HTTPException(503, { message: JSON.stringify(problem) });
+    }
+
+    const { show_id, episode_id } = c.req.valid("param");
+
+    try {
+      // First, get the episode to ensure it exists
+      const episode = await episodeService.getEpisodeById(show_id, episode_id);
+
+      if (!episode || episode.showId !== show_id) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Episode not found",
+          instance: c.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      // Get the markdown content from the request body
+      const scriptContent = await c.req.text();
+
+      if (!scriptContent || scriptContent.trim().length === 0) {
+        const problem = {
+          type: "bad_request",
+          title: "Bad Request",
+          status: 400,
+          detail: "Script content cannot be empty",
+          instance: c.req.path,
+        };
+        throw new HTTPException(400, { message: JSON.stringify(problem) });
+      }
+
+      // Generate script key - use existing key if available, or create new one
+      let scriptKey: string;
+      if (episode.scriptUrl) {
+        // Extract existing key
+        if (episode.scriptUrl.startsWith("r2://")) {
+          scriptKey = episode.scriptUrl.replace("r2://", "");
+        } else {
+          const url = new URL(episode.scriptUrl);
+          const pathSegments = url.pathname.split("/");
+          const scriptsIndex = pathSegments.indexOf("scripts");
+          if (scriptsIndex !== -1) {
+            scriptKey = pathSegments.slice(scriptsIndex).join("/");
+          } else {
+            // Create new key if existing URL is invalid
+            scriptKey = `scripts/${episode.organizationId}/${show_id}/${episode_id}/script.md`;
+          }
+        }
+      } else {
+        // Create new key
+        scriptKey = `scripts/${episode.organizationId}/${show_id}/${episode_id}/script.md`;
+      }
+
+      // Upload script to R2
+      await bucket.put(scriptKey, scriptContent, {
+        httpMetadata: {
+          contentType: "text/markdown",
+        },
+      });
+
+      const scriptUrl = `r2://${scriptKey}`;
+
+      // Update episode with scriptUrl
+      await episodeService.updateEpisode(show_id, episode_id, {
+        scriptUrl: scriptUrl,
+      });
+
+      // Create a TTS generation task if workflow is available
+      if (audioService && ttsGenerationWorkflow) {
+        try {
+          // Import TaskService
+          const { TaskService } = await import("../tasks/service.js");
+
+          // Get the database from audioService
+          const database = (audioService as any).database;
+
+          // Create a TaskService instance with TTS workflow binding
+          const taskService = new TaskService(
+            database,
+            undefined, // audioProcessingWorkflow
+            undefined, // importShowWorkflow
+            ttsGenerationWorkflow
+          );
+
+          // Create a TTS generation task
+          const ttsTask = await taskService.createTask(
+            "tts_generation",
+            {
+              episodeId: episode_id,
+              scriptUrl: scriptUrl,
+              organizationId: episode.organizationId,
+            },
+            episode.organizationId
+          );
+
+          // Return response with task information
+          return c.json({
+            success: true,
+            scriptUrl: scriptUrl,
+            message: "Script updated successfully and TTS generation started",
+            taskId: ttsTask.id,
+          });
+        } catch (ttsError) {
+          // Log the error but don't fail the script update
+          console.error("Failed to create TTS generation task:", ttsError);
+          // Return without task info if TTS creation fails
+        }
+      }
+
+      return c.json({
+        success: true,
+        scriptUrl: scriptUrl,
+        message: "Script updated successfully",
+      });
+    } catch (error: any) {
+      if (error instanceof HTTPException) {
+        throw error;
+      }
+
+      console.error("Failed to update script:", error);
+
+      const problem = {
+        type: "internal_server_error",
+        title: "Internal Server Error",
+        status: 500,
+        detail: "Failed to update script",
         instance: c.req.path,
       };
       throw new HTTPException(500, { message: JSON.stringify(problem) });

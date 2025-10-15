@@ -4,6 +4,13 @@ import type { Task } from "../database/schema.js";
 
 export type TaskType = "audio_processing" | "import_show" | "tts_generation";
 
+// Map task types to human-readable names
+const TASK_TYPE_NAMES: Record<TaskType, string> = {
+  audio_processing: "Audio Processing",
+  import_show: "Import Show",
+  tts_generation: "TTS Generation",
+};
+
 export interface TaskPayload {
   [key: string]: any;
 }
@@ -43,6 +50,7 @@ export class TaskService {
     const now = new Date().toISOString();
     const task = await this.repository.create({
       type,
+      name: TASK_TYPE_NAMES[type],
       status: "pending",
       attempts: 0,
       organizationId,
@@ -316,7 +324,8 @@ export class TaskService {
 
   private async handleTtsGeneration(payload: TaskPayload): Promise<void> {
     console.log(
-      `handleTtsGeneration called with workflow: ${!!this.ttsGenerationWorkflow}`
+      `handleTtsGeneration called with workflow: ${!!this
+        .ttsGenerationWorkflow}`
     );
     if (!this.ttsGenerationWorkflow) {
       console.error("TTS generation workflow is null/undefined");

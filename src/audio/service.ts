@@ -376,6 +376,31 @@ export class AudioService {
     }
   }
 
+  async generatePresignedUrlWithCors(r2Key: string): Promise<string | null> {
+    if (!this.presignedUrlGenerator) {
+      return null;
+    }
+
+    try {
+      // Force AWS signature even with custom domain for CORS-sensitive downloads
+      return await this.presignedUrlGenerator.generatePresignedUrl(
+        "podcast-service-assets",
+        r2Key,
+        28800, // 8 hours
+        "GET",
+        undefined,
+        true // forceSignature for CORS support
+      );
+    } catch (error) {
+      console.warn(
+        "Failed to generate CORS presigned URL for key:",
+        r2Key,
+        error
+      );
+      return null;
+    }
+  }
+
   /**
    * Creates an audio processing task that will start a workflow
    * This is the new recommended way to process audio

@@ -4,7 +4,6 @@ import {
   WorkflowEvent,
 } from "cloudflare:workers";
 import { v4 as uuidv4 } from "uuid";
-import { generateSignedUploadUrl } from "../../utils/storage";
 import { R2PreSignedUrlGenerator } from "../../utils";
 
 import type { Env, TtsGenerationParams, TtsGenerationResult } from "./types";
@@ -14,19 +13,12 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
   Env,
   TtsGenerationParams
 > {
-  async run(
-    event: WorkflowEvent<TtsGenerationParams>,
-    step: WorkflowStep
-  ) {
+  async run(event: WorkflowEvent<TtsGenerationParams>, step: WorkflowStep) {
     // Validate input parameters
     const validatedParams = TtsGenerationParamsSchema.parse(event.payload);
 
     const { episodeId, scriptUrl, voice, model, taskId, organizationId } =
       validatedParams;
-
-    console.log(
-      `Starting TTS generation workflow for episode ${episodeId} with script URL: ${scriptUrl}`
-    );
 
     // Step 1: Initialize workflow
     const workflowState = await step.do(
@@ -39,14 +31,14 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
         timeout: "30 seconds",
       },
       async () => {
-        await this.updateTaskStatus(taskId, "processing", "Initializing TTS generation");
+        await this.updateTaskStatus(
+          taskId,
+          "processing",
+          "Initializing TTS generation"
+        );
 
         const workflowId = uuidv4();
         const timestamp = new Date().toISOString();
-
-        console.log(
-          `TTS workflow initialized: ${workflowId} for episode ${episodeId}`
-        );
 
         return {
           workflowId,
@@ -74,9 +66,28 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
       async () => {
         await this.updateTaskProgress(taskId, 20, "Fetching script content");
 
-        console.log(`Fetching script from URL: ${scriptUrl}`);
-        const response = await fetch(scriptUrl);
-        
+        // Handle R2 URLs by converting them to signed HTTP URLs
+        let fetchUrl = scriptUrl;
+        if (scriptUrl.startsWith("r2://")) {
+          // Strip r2:// prefix to get the actual R2 key
+          const r2Key = scriptUrl.substring(5);
+
+          // Generate a signed download URL
+          const r2Generator = new R2PreSignedUrlGenerator(
+            this.env.R2_ACCESS_KEY_ID,
+            this.env.R2_SECRET_ACCESS_KEY,
+            this.env.R2_ENDPOINT
+          );
+
+          fetchUrl = await r2Generator.generatePresignedUrl(
+            "podcast-service-assets", // bucket name from wrangler.toml
+            r2Key,
+            3600 // 1 hour expiration
+          );
+        }
+
+        const response = await fetch(fetchUrl);
+
         if (!response.ok) {
           throw new Error(
             `Failed to fetch script: ${response.status} ${response.statusText}`
@@ -84,7 +95,6 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
         }
 
         const text = await response.text();
-        console.log(`Script fetched successfully, length: ${text.length} characters`);
 
         return {
           text,
@@ -104,34 +114,52 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
         timeout: "5 minutes",
       },
       async () => {
-        await this.updateTaskProgress(taskId, 50, "Generating audio with Deepgram Aura");
-
-        console.log(
-          `Generating TTS audio with model ${model}, voice ${voice}, text length: ${scriptContent.length}`
+        await this.updateTaskProgress(
+          taskId,
+          50,
+          "Generating audio with Deepgram Aura"
         );
 
         // Use Cloudflare AI to generate TTS audio
         const ttsResponse = await this.env.AI.run(model as any, {
           text: scriptContent.text,
-          voice: voice,
+          speaker: voice, // Use 'speaker' parameter as per Aura-1 API
+          encoding: "mp3", // Specify encoding format (container not needed for mp3)
         });
+
+        if (!ttsResponse) {
+          throw new Error("AI.run returned null or undefined response");
+        }
 
         // Convert the response to an ArrayBuffer
         let audioArrayBuffer: ArrayBuffer;
-        
+
         if (ttsResponse instanceof ReadableStream) {
           // If it's a stream, read it into an ArrayBuffer
           const reader = ttsResponse.getReader();
           const chunks: Uint8Array[] = [];
-          
-          while (true) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            chunks.push(value);
+
+          try {
+            while (true) {
+              const { done, value } = await reader.read();
+              if (done) break;
+              if (value) {
+                chunks.push(value);
+              }
+            }
+          } finally {
+            reader.releaseLock();
           }
-          
+
+          if (chunks.length === 0) {
+            throw new Error("No audio data received from TTS service");
+          }
+
           // Combine all chunks into a single ArrayBuffer
-          const totalLength = chunks.reduce((acc, chunk) => acc + chunk.length, 0);
+          const totalLength = chunks.reduce(
+            (acc, chunk) => acc + chunk.length,
+            0
+          );
           const combined = new Uint8Array(totalLength);
           let offset = 0;
           for (const chunk of chunks) {
@@ -141,24 +169,37 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
           audioArrayBuffer = combined.buffer;
         } else if (ttsResponse instanceof ArrayBuffer) {
           audioArrayBuffer = ttsResponse;
+        } else if (ArrayBuffer.isView(ttsResponse)) {
+          // Handle typed arrays (Uint8Array, etc.) - create a copy
+          const uint8 = new Uint8Array(ttsResponse.byteLength);
+          uint8.set(
+            new Uint8Array(
+              ttsResponse.buffer,
+              ttsResponse.byteOffset,
+              ttsResponse.byteLength
+            )
+          );
+          audioArrayBuffer = uint8.buffer;
         } else {
-          throw new Error("Unexpected TTS response format");
+          throw new Error(
+            `Unexpected TTS response format: ${typeof ttsResponse}`
+          );
         }
 
-        console.log(`TTS audio generated, size: ${audioArrayBuffer.byteLength} bytes`);
+        if (audioArrayBuffer.byteLength === 0) {
+          throw new Error("Generated audio file is empty");
+        }
 
         // Generate R2 key for the audio file
         const audioFileId = uuidv4();
         const audioR2Key = `tts/${episodeId}/${audioFileId}.mp3`;
 
         // Upload audio to R2 bucket
-        await this.env.PODCAST_SERVICE_ASSETS.put(audioR2Key, audioArrayBuffer, {
+        await this.env.BUCKET.put(audioR2Key, audioArrayBuffer, {
           httpMetadata: {
             contentType: "audio/mpeg",
           },
         });
-
-        console.log(`TTS audio uploaded to R2: ${audioR2Key}`);
 
         // Generate R2 presigned URL generator for creating signed URLs
         const r2Generator = new R2PreSignedUrlGenerator(
@@ -194,9 +235,11 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
         timeout: "30 seconds",
       },
       async () => {
-        await this.updateTaskProgress(taskId, 80, "Updating episode with TTS audio");
-
-        console.log(`Updating episode ${episodeId} with audio URL: ${ttsResult.audioR2Key}`);
+        await this.updateTaskProgress(
+          taskId,
+          80,
+          "Updating episode with TTS audio"
+        );
 
         // Update the episode in the database
         const updateQuery = `
@@ -205,11 +248,9 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
           WHERE id = ?
         `;
 
-        await this.env.DATABASE.prepare(updateQuery)
+        await this.env.DB.prepare(updateQuery)
           .bind(ttsResult.audioR2Key, new Date().toISOString(), episodeId)
           .run();
-
-        console.log(`Episode ${episodeId} updated successfully`);
 
         return true;
       }
@@ -226,7 +267,15 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
         timeout: "30 seconds",
       },
       async () => {
-        await this.updateTaskStatus(taskId, "completed", "TTS generation completed successfully");
+        // Update task progress to 100%
+        await this.updateTaskProgress(taskId, 100, "TTS generation completed");
+
+        // Update task status to done
+        await this.updateTaskStatus(
+          taskId,
+          "done",
+          "TTS generation completed successfully"
+        );
 
         // Update task result
         if (taskId) {
@@ -236,7 +285,7 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
             WHERE id = ?
           `;
 
-          await this.env.DATABASE.prepare(resultQuery)
+          const resultUpdate = await this.env.DB.prepare(resultQuery)
             .bind(
               JSON.stringify({
                 audioR2Key: ttsResult.audioR2Key,
@@ -248,9 +297,9 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
               parseInt(taskId)
             )
             .run();
-        }
 
-        console.log(`TTS generation workflow completed for episode ${episodeId}`);
+          console.log(`Updated task ${taskId} result:`, resultUpdate.meta);
+        }
 
         return {
           success: true,
@@ -282,11 +331,17 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
         WHERE id = ?
       `;
 
-      await this.env.DATABASE.prepare(query)
-        .bind(progress, message || null, new Date().toISOString(), parseInt(taskId))
+      const result = await this.env.DB.prepare(query)
+        .bind(
+          progress,
+          message || null,
+          new Date().toISOString(),
+          parseInt(taskId)
+        )
         .run();
     } catch (error) {
-      console.error("Failed to update task progress:", error);
+      console.error(`Failed to update task ${taskId} progress:`, error);
+      // Don't throw - allow workflow to continue
     }
   }
 
@@ -305,11 +360,19 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
         WHERE id = ?
       `;
 
-      await this.env.DATABASE.prepare(query)
-        .bind(status, message || null, new Date().toISOString(), parseInt(taskId))
+      const result = await this.env.DB.prepare(query)
+        .bind(
+          status,
+          message || null,
+          new Date().toISOString(),
+          parseInt(taskId)
+        )
         .run();
+
+      console.log(`Updated task ${taskId} status to ${status}:`, result.meta);
     } catch (error) {
-      console.error("Failed to update task status:", error);
+      console.error(`Failed to update task ${taskId} status:`, error);
+      // Don't throw - allow workflow to continue
     }
   }
 }
