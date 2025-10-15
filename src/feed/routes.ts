@@ -85,12 +85,15 @@ function generateRSSFeed(
     })
     .join("");
 
+  const feedUrl = `https://podcast-service.sesamy-dev.workers.dev/feeds/${show.id}`;
+
   return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
+<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd" xmlns:atom="http://www.w3.org/2005/Atom">
   <channel>
     <title><![CDATA[${show.title || "Untitled Show"}]]></title>
     <description><![CDATA[${show.description || ""}]]></description>
     <link>https://podcast-service.sesamy.dev/shows/${show.id}</link>
+    <atom:link href="${feedUrl}" rel="self" type="application/rss+xml"/>
     <language>en-us</language>
     <pubDate>${now}</pubDate>
     <lastBuildDate>${now}</lastBuildDate>
@@ -105,8 +108,10 @@ function generateRSSFeed(
         : ""
     }
     ${imageUrl ? `<itunes:image href="${imageUrl}"/>` : ""}
+    <itunes:author>Sesamy Podcast Service</itunes:author>
+    <itunes:email>podcast@sesamy.com</itunes:email>
     <itunes:category text="Technology"/>
-    <itunes:explicit>false</itunes:explicit>
+    <itunes:explicit>no</itunes:explicit>
     ${episodeItems}
   </channel>
 </rss>`;

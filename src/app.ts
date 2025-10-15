@@ -41,7 +41,8 @@ export function createApp(
   importShowWorkflow?: Workflow,
   auth0Domain?: string,
   auth0ClientId?: string,
-  auth0ClientSecret?: string
+  auth0ClientSecret?: string,
+  ttsGenerationWorkflow?: Workflow
 ) {
   const app = new OpenAPIHono();
 
@@ -223,7 +224,8 @@ export function createApp(
     episodeService,
     audioService,
     imageService,
-    bucket
+    bucket,
+    ttsGenerationWorkflow
   );
   registerAudioRoutes(app, audioService);
   app.route("/", createTaskRoutes(database));

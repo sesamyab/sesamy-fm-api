@@ -1,0 +1,1 @@
+ALTER TABLE `episodes` ADD `script_url` text;

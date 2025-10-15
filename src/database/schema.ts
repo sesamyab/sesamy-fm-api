@@ -46,6 +46,7 @@ export const episodes = sqliteTable("episodes", {
   imageUrl: text("image_url"),
   audioUrl: text("audio_url"),
   transcriptUrl: text("transcript_url"),
+  scriptUrl: text("script_url"), // URL to script text for TTS generation
   encodedAudioUrls: text("encoded_audio_urls"), // JSON string containing encoded audio URLs
   published: integer("published", { mode: "boolean" }).default(false),
   publishedAt: text("published_at"),
@@ -92,6 +93,7 @@ export const imageUploads = sqliteTable("image_uploads", {
 export const tasks = sqliteTable("tasks", {
   id: integer("id").primaryKey({ autoIncrement: true }),
   type: text("type").notNull(), // "transcribe", "encode", "publish", "notification", "audio_processing"
+  name: text("name").notNull(), // Human-readable name for the task (e.g., "Audio Processing", "Import Show", "TTS Generation")
   status: text("status").notNull().default("pending"), // "pending", "processing", "done", "failed", "retry"
   payload: text("payload"), // JSON string with input data
   result: text("result"), // JSON string with output data
