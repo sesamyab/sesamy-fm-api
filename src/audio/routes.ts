@@ -135,7 +135,8 @@ export function registerAudioRoutes(
 
         // Store the markdown file in R2
         const scriptId = (await import("uuid")).v4();
-        const scriptKey = `scripts/${show_id}/${episode_id}/${scriptId}/${audioFile.name}`;
+        const safeName = audioFile.name.replace(/[^A-Za-z0-9._-]/g, "_");
+        const scriptKey = `scripts/${show_id}/${episode_id}/${scriptId}/${safeName}`;
 
         // Upload to R2
         if (audioService["bucket"]) {
