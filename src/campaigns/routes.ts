@@ -954,14 +954,14 @@ export function createCampaignRoutes(
             throw new HTTPException(400, { message: JSON.stringify(problem) });
           }
 
-          // Convert File to Buffer
-          const buffer = Buffer.from(await audioFile.arrayBuffer());
+          // Get ArrayBuffer directly (no need for Node Buffer in Workers)
+          const arrayBuffer = await audioFile.arrayBuffer();
 
           const fileData = {
             fileName: audioFile.name,
             fileSize: audioFile.size,
             mimeType: audioFile.type,
-            buffer,
+            buffer: arrayBuffer,
           };
 
           const upload = await creativeUploadService.uploadCreativeAudio(

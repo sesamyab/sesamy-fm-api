@@ -1,3 +1,5 @@
+/// <reference types="@cloudflare/workers-types" />
+
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { AudioUploadSchema, AudioParamsSchema } from "./schemas";
@@ -130,8 +132,8 @@ export function registerAudioRoutes(
           `Markdown file detected: ${audioFile.name}, triggering TTS workflow`
         );
 
-        // Convert File to Buffer
-        const buffer = Buffer.from(await audioFile.arrayBuffer());
+        // Get ArrayBuffer directly (no need for Node Buffer in Workers)
+        const arrayBuffer = await audioFile.arrayBuffer();
 
         // Store the markdown file in R2
         const scriptId = (await import("uuid")).v4();
@@ -139,7 +141,7 @@ export function registerAudioRoutes(
 
         // Upload to R2
         if (audioService["bucket"]) {
-          await audioService["bucket"].put(scriptKey, buffer, {
+          await audioService["bucket"].put(scriptKey, arrayBuffer, {
             httpMetadata: {
               contentType: audioFile.type || "text/markdown",
             },
@@ -155,21 +157,14 @@ export function registerAudioRoutes(
 
           // Generate a presigned URL for the TTS workflow to fetch
           let accessibleScriptUrl = scriptUrl;
-          if (audioService["presignedUrlGenerator"]) {
-            try {
-              accessibleScriptUrl = await audioService[
-                "presignedUrlGenerator"
-              ].generatePresignedUrl(
-                "podcast-service-assets",
-                scriptKey,
-                3600 // 1 hour
-              );
-            } catch (error) {
-              console.warn(
-                "Failed to generate presigned URL for script:",
-                error
-              );
+          try {
+            const presignedUrl =
+              await audioService.generatePresignedUrlWithCors(scriptKey);
+            if (presignedUrl) {
+              accessibleScriptUrl = presignedUrl;
             }
+          } catch (error) {
+            console.warn("Failed to generate presigned URL for script:", error);
           }
 
           // Create TTS generation task
@@ -179,7 +174,9 @@ export function registerAudioRoutes(
             const organizationId = payload.org_id;
 
             // Get TTS workflow binding from context if available
-            const ttsWorkflow = (c.env as any)?.TTS_GENERATION_WORKFLOW;
+            const ttsWorkflow = (
+              c.env as { TTS_GENERATION_WORKFLOW?: Workflow }
+            )?.TTS_GENERATION_WORKFLOW;
 
             const taskService = new TaskService(
               database,
@@ -225,14 +222,13 @@ export function registerAudioRoutes(
         }
       } else {
         // Handle regular audio file
-        // Convert File to Buffer
-        const buffer = Buffer.from(await audioFile.arrayBuffer());
+        const arrayBuffer = await audioFile.arrayBuffer();
 
         const fileData = {
           fileName: audioFile.name,
           fileSize: audioFile.size,
           mimeType: audioFile.type,
-          buffer,
+          buffer: arrayBuffer,
         };
 
         const upload = await audioService.uploadAudio(

@@ -34,7 +34,8 @@ export async function encodeAudioForTTS(env: Env, workflowState: unknown) {
   const audioDownloadUrl = await r2Generator.generatePresignedUrl(
     "podcast-service-assets",
     actualR2Key,
-    3600 // 1 hour
+    3600, // 1 hour
+    "GET"
   );
 
   // Generate R2 key for the encoded file
@@ -89,7 +90,8 @@ export async function encodeAudioForTTS(env: Env, workflowState: unknown) {
   const encodedDownloadUrl = await r2Generator.generatePresignedUrl(
     "podcast-service-assets",
     encodedR2Key,
-    3600 // 1 hour
+    3600, // 1 hour
+    "GET"
   );
 
   const result = {

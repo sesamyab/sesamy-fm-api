@@ -164,7 +164,7 @@ export function createApp(
   registerHealthRoutes(app, database);
 
   // RSS feeds don't require authentication (public access)
-  registerFeedRoutes(app, showService, episodeRepository, audioService);
+  registerFeedRoutes(app, showService, episodeRepository);
 
   // ===== ORGANIZATION ROUTES (REQUIRE ONLY VALID JWT) =====
 

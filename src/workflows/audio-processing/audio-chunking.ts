@@ -104,7 +104,8 @@ export async function audioChunking(
       return await r2Generator.generatePresignedUrl(
         "podcast-service-assets",
         chunk.r2Key,
-        3600 // 1 hour expiration
+        3600, // 1 hour expiration
+        "GET"
       );
     })
   );

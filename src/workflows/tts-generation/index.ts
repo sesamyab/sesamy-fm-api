@@ -66,35 +66,33 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
       async () => {
         await this.updateTaskProgress(taskId, 20, "Fetching script content");
 
-        // Handle R2 URLs by converting them to signed HTTP URLs
-        let fetchUrl = scriptUrl;
+        let text: string;
+
+        // Handle R2 URLs by reading directly from R2 bucket
         if (scriptUrl.startsWith("r2://")) {
           // Strip r2:// prefix to get the actual R2 key
           const r2Key = scriptUrl.substring(5);
 
-          // Generate a signed download URL
-          const r2Generator = new R2PreSignedUrlGenerator(
-            this.env.R2_ACCESS_KEY_ID,
-            this.env.R2_SECRET_ACCESS_KEY,
-            this.env.R2_ENDPOINT
-          );
+          // Read directly from R2 bucket (no HTTP roundtrip needed)
+          const r2Object = await this.env.BUCKET.get(r2Key);
 
-          fetchUrl = await r2Generator.generatePresignedUrl(
-            "podcast-service-assets", // bucket name from wrangler.toml
-            r2Key,
-            3600 // 1 hour expiration
-          );
+          if (!r2Object) {
+            throw new Error(`Script not found in R2: ${r2Key}`);
+          }
+
+          text = await r2Object.text();
+        } else {
+          // For HTTP/HTTPS URLs, fetch normally
+          const response = await fetch(scriptUrl);
+
+          if (!response.ok) {
+            throw new Error(
+              `Failed to fetch script: ${response.status} ${response.statusText}`
+            );
+          }
+
+          text = await response.text();
         }
-
-        const response = await fetch(fetchUrl);
-
-        if (!response.ok) {
-          throw new Error(
-            `Failed to fetch script: ${response.status} ${response.statusText}`
-          );
-        }
-
-        const text = await response.text();
 
         return {
           text,
@@ -212,7 +210,8 @@ export class TtsGenerationWorkflow extends WorkflowEntrypoint<
         const audioUrl = await r2Generator.generatePresignedUrl(
           "podcast-service-assets",
           audioR2Key,
-          3600 // 1 hour expiration
+          3600, // 1 hour expiration
+          "GET"
         );
 
         return {

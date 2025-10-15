@@ -62,7 +62,7 @@ export class CreativeUploadService {
       fileName: string;
       fileSize: number;
       mimeType: string;
-      buffer: Buffer;
+      buffer: ArrayBuffer | Buffer;
     }
   ) {
     // Verify creative exists

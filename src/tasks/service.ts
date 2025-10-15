@@ -1,6 +1,7 @@
 import { TaskRepository } from "./repository.js";
 import { WorkflowService } from "../workflows/service.js";
 import type { Task } from "../database/schema.js";
+import { Workflow } from "@cloudflare/workers-types";
 
 export type TaskType = "audio_processing" | "import_show" | "tts_generation";
 
@@ -22,9 +23,9 @@ export interface TaskResult {
 export class TaskService {
   private repository: TaskRepository;
   private workflowService: WorkflowService;
-  private audioProcessingWorkflow?: Workflow; // This is the Cloudflare Workflow binding
-  private importShowWorkflow?: Workflow; // This is the Cloudflare Workflow binding
-  private ttsGenerationWorkflow?: Workflow; // This is the Cloudflare Workflow binding
+  private audioProcessingWorkflow?: Workflow;
+  private importShowWorkflow?: Workflow;
+  private ttsGenerationWorkflow?: Workflow;
 
   constructor(
     database?: D1Database,

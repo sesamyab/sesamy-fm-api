@@ -58,7 +58,7 @@ export class AudioService {
       fileName: string;
       fileSize: number;
       mimeType: string;
-      buffer: Buffer;
+      buffer: ArrayBuffer | Buffer;
     }
   ) {
     // Verify episode exists
@@ -254,11 +254,13 @@ export class AudioService {
       let eventSignedUrl = audioR2Key;
       if (this.presignedUrlGenerator && audioR2Key.startsWith("r2://")) {
         try {
+          const r2Key = audioR2Key.replace("r2://", "");
           eventSignedUrl =
             await this.presignedUrlGenerator.generatePresignedUrl(
-              audioR2Key.replace("r2://", ""),
-              "get",
-              3600 // 1 hour
+              "podcast-service-assets",
+              r2Key,
+              3600, // 1 hour
+              "GET"
             );
         } catch (error) {
           console.warn(

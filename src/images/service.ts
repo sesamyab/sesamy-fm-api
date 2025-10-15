@@ -296,7 +296,9 @@ export class ImageService {
     const key = url.replace("r2://", "");
     return await this.r2PreSignedUrlGenerator.generatePresignedUrl(
       "podcast-assets",
-      key
+      key,
+      28800, // 8 hours
+      "GET"
     );
   }
 }
