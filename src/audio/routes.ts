@@ -155,21 +155,9 @@ export function registerAudioRoutes(
 
           // Generate a presigned URL for the TTS workflow to fetch
           let accessibleScriptUrl = scriptUrl;
-          if (audioService["presignedUrlGenerator"]) {
-            try {
-              accessibleScriptUrl = await audioService[
-                "presignedUrlGenerator"
-              ].generatePresignedUrl(
-                "podcast-service-assets",
-                scriptKey,
-                3600 // 1 hour
-              );
-            } catch (error) {
-              console.warn(
-                "Failed to generate presigned URL for script:",
-                error
-              );
-            }
+          const corsUrl = await audioService.generatePresignedUrlWithCors(scriptKey);
+          if (corsUrl) {
+            accessibleScriptUrl = corsUrl;
           }
 
           // Create TTS generation task
