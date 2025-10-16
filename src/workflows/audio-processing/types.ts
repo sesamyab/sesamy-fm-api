@@ -14,6 +14,10 @@ export type Env = {
   R2_ENDPOINT: string;
   STORAGE_SIGNATURE_SECRET: string;
   SERVICE_BASE_URL?: string; // Base URL for the service (e.g., https://your-worker.workers.dev)
+  // AWS Lambda encoding service configuration (optional)
+  AWS_LAMBDA_ENCODING_URL?: string;
+  AWS_LAMBDA_API_KEY?: string;
+  ENCODING_SERVICE_PROVIDER?: string; // 'aws' or 'cloudflare'
   // Transcription settings
   DEFAULT_TRANSCRIPTION_LANGUAGE?: string; // Language code for transcription (e.g., 'en', 'es', 'fr')
   DEFAULT_TRANSCRIPTION_MODEL?: string; // Default transcription model (e.g., '@cf/deepgram/nova-3')

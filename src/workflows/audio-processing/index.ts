@@ -12,7 +12,6 @@ import { InitializeWorkflowStep } from "./initialize-workflow";
 import { encodeAudioForTTS } from "./tts-encode";
 import { WorkflowProgressReporter } from "./progress-reporter";
 import { audioChunking } from "./audio-chunking";
-import { transcribeChunks } from "./transcribe-chunks";
 // import { enhanceTranscript } from "./enhance-transcript";
 // import { audioEncoding } from "./audio-encoding";
 // import { updateEpisodeEncodings } from "./update-episode-encodings";
@@ -23,7 +22,7 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
   Env,
   AudioProcessingParams
 > {
-  private readonly totalSteps = 9;
+  private readonly totalSteps = 4; // Updated: only encoding steps now
 
   private async updateWorkflowStatus(
     taskId?: string,
@@ -204,7 +203,7 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
         await progressReporter.reportStepProgress(
           "initialize-workflow",
           0,
-          "1/10 Initializing workflow"
+          "1/4 Initializing workflow"
         );
 
         const initStep = new InitializeWorkflowStep(this.env);
@@ -240,7 +239,7 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
           await progressReporter.reportStepProgress(
             "encode-for-tts",
             0,
-            "2/10 Encoding audio for TTS"
+            "2/4 Encoding audio for TTS"
           );
 
           const result = await encodeAudioForTTS(this.env, workflowState);
@@ -277,7 +276,7 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
           await progressReporter.reportStepProgress(
             "audio-chunking",
             0,
-            "3/9 Preparing storage and creating audio chunks"
+            "3/4 Preparing storage and creating audio chunks"
           );
 
           const result = await audioChunking(
@@ -295,176 +294,7 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
         }
       );
 
-      // Step 4: Transcribe chunks in parallel
-      currentStep = "transcribe-chunks";
-      const transcriptionResult = await step.do(
-        "transcribe-chunks",
-        {
-          retries: {
-            limit: 2,
-            delay: "10 seconds",
-            backoff: "exponential",
-          },
-          timeout: "20 minutes",
-        },
-        async () => {
-          await this.updateStepProgress(
-            4,
-            "Transcribing audio chunks",
-            validatedParams.taskId
-          );
-          await progressReporter.reportStepProgress(
-            "transcribe-chunks",
-            0,
-            "4/9 Transcribing audio chunks"
-          );
-
-          const result = await transcribeChunks(
-            this.env,
-            workflowState,
-            chunkingResult
-          );
-
-          await progressReporter.reportStepComplete(
-            "transcribe-chunks",
-            `Transcription completed (${chunkingResult.chunks.length} chunks)`,
-            {
-              chunkTranscriptionsUrl: result.chunkTranscriptionsUrl,
-            }
-          );
-
-          return result;
-        }
-      );
-
-      // Extract the results from Step 5
-      let chunkTranscriptionsUrl = transcriptionResult.chunkTranscriptionsUrl;
-
-      // // Step 5: Enhance transcript with AI (create paragraphs, keywords, and chapters)
-      // currentStep = "enhance-transcript";
-      // let enhancedTranscriptResult = await step.do(
-      //   "enhance-transcript",
-      //   {
-      //     retries: {
-      //       limit: 2,
-      //       delay: "10 seconds",
-      //       backoff: "exponential",
-      //     },
-      //     timeout: "10 minutes",
-      //   },
-      //   async () => {
-      //     await this.updateStepProgress(
-      //       5,
-      //       "Enhancing transcript with AI",
-      //       validatedParams.taskId
-      //     );
-      //     await progressReporter.reportStepProgress(
-      //       "enhance-transcript",
-      //       0,
-      //       "5/9 Enhancing transcript with AI"
-      //     );
-
-      //     const result = await enhanceTranscript(
-      //       this.env,
-      //       workflowState,
-      //       transcriptionResult.chunkTranscriptionsUrl
-      //     );
-
-      //     await progressReporter.reportStepComplete(
-      //       "enhance-transcript",
-      //       `Enhanced transcript with ${result.chapters.length} chapters and ${result.keywords.length} keywords`,
-      //       {
-      //         transcriptUrl: result.enhancedTranscriptUrl,
-      //         chapters: result.chapters.length,
-      //         keywords: result.keywords.length,
-      //         summary: result.summary ? "generated" : "none",
-      //         chunkTranscriptionsUrl: chunkTranscriptionsUrl,
-      //       }
-      //     );
-
-      //     // Update task result with enhanced transcript details
-      //     await this.updateTaskResult(validatedParams.taskId!, {
-      //       enhancedTranscript: {
-      //         url: result.enhancedTranscriptUrl,
-      //         chapters: result.chapters.length,
-      //         keywords: result.keywords.length,
-      //         paragraphs: result.paragraphs,
-      //         hasSummary: !!result.summary,
-      //       },
-      //       chunkTranscriptions: chunkTranscriptionsUrl
-      //         ? {
-      //             url: chunkTranscriptionsUrl,
-      //             description:
-      //               "Individual chunk transcriptions with timestamps",
-      //           }
-      //         : undefined,
-      //     });
-
-      //     return result;
-      //   }
-      // );
-
-      // // Step 6: Audio Encoding (CPU-intensive operation)
-      // currentStep = "audio-encoding";
-      // let encodingResult = await step.do(
-      //   "audio-encoding",
-      //   {
-      //     retries: {
-      //       limit: 3,
-      //       delay: "10 seconds",
-      //       backoff: "exponential",
-      //     },
-      //     timeout: "15 minutes",
-      //   },
-      //   async () => {
-      //     await this.updateStepProgress(
-      //       6,
-      //       "Encoding audio formats",
-      //       validatedParams.taskId
-      //     );
-      //     await progressReporter.reportStepProgress(
-      //       "audio-encoding",
-      //       0,
-      //       "6/9 Encoding audio formats"
-      //     );
-
-      //     const result = await audioEncoding(this.env, workflowState);
-
-      //     await progressReporter.reportStepComplete(
-      //       "audio-encoding",
-      //       `Encoded ${result.encodings.length} formats`
-      //     );
-
-      //     return result;
-      //   }
-      // );
-
-      // // Step 7: Update episode with encoded audio URLs
-      // currentStep = "update-episode-encodings";
-      // await step.do(
-      //   "update-episode-encodings",
-      //   {
-      //     retries: {
-      //       limit: 2,
-      //       delay: "5 seconds",
-      //     },
-      //     timeout: "5 minutes",
-      //   },
-      //   async () => {
-      //     await this.updateStepProgress(
-      //       7,
-      //       "Updating episode with encodings",
-      //       validatedParams.taskId
-      //     );
-      //     return await updateEpisodeEncodings(
-      //       this.env,
-      //       workflowState,
-      //       encodingResult.encodings
-      //     );
-      //   }
-      // );
-
-      // Step 8: Cleanup temporary files from R2 (optional)
+      // Step 4: Cleanup temporary files from R2 (optional)
       currentStep = "cleanup-resources";
       await step.do(
         "cleanup-resources",
@@ -477,7 +307,7 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
         },
         async () => {
           await this.updateStepProgress(
-            8,
+            4,
             "Cleaning up temporary files",
             validatedParams.taskId
           );
@@ -485,121 +315,57 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
         }
       );
 
-      // // Step 9: Final processing and store transcript
-      // currentStep = "finalize-processing";
-      // let finalResult = await step.do(
-      //   "finalize-processing",
-      //   {
-      //     retries: {
-      //       limit: 2,
-      //       delay: "2 seconds",
-      //     },
-      //     timeout: "5 minutes",
-      //   },
-      //   async () => {
-      //     await this.updateStepProgress(
-      //       9,
-      //       "Finalizing processing and storing results",
-      //       validatedParams.taskId
-      //     );
-      //     const finalResult = await finalizeProcessing(
-      //       this.env,
-      //       workflowState,
-      //       transcribedChunks,
-      //       encodingResult.encodings
-      //     );
-
-      //     // Update task result with final processing details
-      //     await this.updateTaskResult(validatedParams.taskId!, {
-      //       finalProcessing: {
-      //         transcriptUrl: finalResult.transcriptUrl,
-      //         textLength: finalResult.textLength,
-      //         totalWords: finalResult.totalWords,
-      //         totalChunks: finalResult.totalChunks,
-      //         totalEncodings: finalResult.totalEncodings,
-      //       },
-      //     });
-
-      //     return finalResult;
-      //   }
-      // );
-
-      // // Update final comprehensive task result
-      // const comprehensiveResult = {
-      //   success: true,
-      //   episodeId: workflowState.episodeId,
-      //   workflowId: workflowState.workflowId,
-      //   completedAt: new Date().toISOString(),
-      //   enhancedTranscript: enhancedTranscriptResult
-      //     ? {
-      //         url: enhancedTranscriptResult.enhancedTranscriptUrl,
-      //         chapters: enhancedTranscriptResult.chapters.length,
-      //         keywords: enhancedTranscriptResult.keywords.length,
-      //         paragraphs: enhancedTranscriptResult.paragraphs,
-      //         hasSummary: !!enhancedTranscriptResult.summary,
-      //       }
-      //     : undefined,
-      //   chunkTranscriptions: chunkTranscriptionsUrl
-      //     ? {
-      //         url: chunkTranscriptionsUrl,
-      //         description: "Individual chunk transcriptions with timestamps",
-      //       }
-      //     : undefined,
-      //   encoding: {
-      //     formats: encodingResult.encodings.length,
-      //   },
-      //   processing: {
-      //     totalWords: finalResult.totalWords,
-      //     totalChunks: finalResult.totalChunks,
-      //     textLength: finalResult.textLength,
-      //   },
-      //   ...finalResult,
-      // };
-
-      // currentStep = "final-task-update";
-      // try {
-      //   await this.updateTaskResult(
-      //     validatedParams.taskId!,
-      //     comprehensiveResult
-      //   );
-      // } catch (error) {
-      //   console.error("Failed to update final task result:", error);
-      // }
+      // Prepare final result
+      const encodingResult = {
+        success: true,
+        episodeId: workflowState.episodeId,
+        workflowId: workflowState.workflowId,
+        completedAt: new Date().toISOString(),
+        encoding: {
+          audioUrl: encodedAudio.encodedAudioUrl,
+          chunks: chunkingResult.chunks.length,
+        },
+      };
 
       // Mark workflow as completed
-      // currentStep = "workflow-completion";
-      // try {
-      //   // Use WorkflowService to properly complete both workflow and task
-      //   if (validatedParams.workflowId) {
-      //     const { WorkflowService } = await import("../service.js");
-      //     const workflowService = new WorkflowService(this.env.DB);
+      currentStep = "workflow-completion";
+      try {
+        // Use WorkflowService to properly complete both workflow and task
+        if (validatedParams.workflowId) {
+          const { WorkflowService } = await import("../service.js");
+          const workflowService = new WorkflowService(this.env.DB);
 
-      //     await workflowService.completeWorkflow(
-      //       validatedParams.workflowId,
-      //       comprehensiveResult,
-      //       undefined // actualDuration - could be calculated if needed
-      //     );
+          await workflowService.completeWorkflow(
+            validatedParams.workflowId,
+            encodingResult,
+            undefined // actualDuration - could be calculated if needed
+          );
 
-      //     console.log(
-      //       `Audio processing workflow and task completed successfully for episode ${validatedParams.episodeId}`
-      //     );
-      //   } else {
-      //     // Fallback to direct task update if workflowId is not available
-      //     await this.updateWorkflowStatus(
-      //       validatedParams.taskId,
-      //       "done",
-      //       "Workflow completed successfully"
-      //     );
-      //     console.log(
-      //       `Audio processing workflow completed successfully for episode ${validatedParams.episodeId} (direct task update)`
-      //     );
-      //   }
-      // } catch (error) {
-      //   console.error("Failed to set final workflow status:", error);
-      //   // Don't throw here as the workflow is actually completed
-      // }
+          console.log(
+            `Audio encoding workflow completed successfully for episode ${validatedParams.episodeId}`
+          );
+        } else {
+          // Fallback to direct task update if workflowId is not available
+          await this.updateWorkflowStatus(
+            validatedParams.taskId,
+            "done",
+            "Audio encoding completed successfully"
+          );
+          console.log(
+            `Audio encoding workflow completed successfully for episode ${validatedParams.episodeId} (direct task update)`
+          );
+        }
 
-      // return comprehensiveResult;
+        // Update task result with encoding details
+        if (validatedParams.taskId) {
+          await this.updateTaskResult(validatedParams.taskId, encodingResult);
+        }
+      } catch (error) {
+        console.error("Failed to set final workflow status:", error);
+        // Don't throw here as the workflow is actually completed
+      }
+
+      return encodingResult;
     } catch (error: any) {
       // Handle workflow error with current step information
       console.error(`Workflow failed at step: ${currentStep}`, error);

@@ -4,19 +4,20 @@ import {
   generateSignedUploadUrl,
 } from "../../utils/storage";
 import { R2PreSignedUrlGenerator } from "../../utils";
+import {
+  EncodingService,
+  type EncodingServiceConfig,
+} from "../../encoding/service";
 import type { Env } from "./types";
 import { WorkflowStateSchema, EncodedAudioSchema } from "./types";
 
 /**
  * Encode audio for processing - converts audio to optimal format for TTS
+ * Uses either AWS Lambda or Cloudflare Container based on configuration
  */
 export async function encodeAudioForTTS(env: Env, workflowState: unknown) {
   // Validate input
   const validatedState = WorkflowStateSchema.parse(workflowState);
-
-  // Get a reference to the encoding container
-  const containerId = env.ENCODING_CONTAINER.idFromName("encoding-service");
-  const container = env.ENCODING_CONTAINER.get(containerId);
 
   // Strip r2:// prefix if present to get the actual R2 key
   const actualR2Key = validatedState.audioR2Key.startsWith("r2://")
@@ -50,41 +51,53 @@ export async function encodeAudioForTTS(env: Env, workflowState: unknown) {
     3600 // 1 hour expiration
   );
 
-  const encodeResponse = await container.fetch("http://localhost:8080/encode", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      audioUrl: audioDownloadUrl,
-      uploadUrl: encodedUploadResult.url,
-      outputFormat: "opus",
-      bitrate: 24,
-      channels: 1, // Mono
-      sampleRate: 16000, // 16 kHz for optimal transcription
-    }),
+  // Determine encoding service provider
+  const provider = env.ENCODING_SERVICE_PROVIDER || "cloudflare";
+
+  // Configure encoding service based on provider
+  let encodingConfig: EncodingServiceConfig;
+
+  if (provider === "aws" && env.AWS_LAMBDA_ENCODING_URL) {
+    console.log("Using AWS Lambda encoding service");
+    encodingConfig = {
+      type: "aws-lambda",
+      awsLambda: {
+        functionUrl: env.AWS_LAMBDA_ENCODING_URL,
+        apiKey: env.AWS_LAMBDA_API_KEY,
+      },
+    };
+  } else {
+    console.log("Using Cloudflare Container encoding service");
+    encodingConfig = {
+      type: "cloudflare",
+      cloudflare: {
+        container: env.ENCODING_CONTAINER,
+      },
+    };
+  }
+
+  // Create encoding service
+  const encodingService = new EncodingService(encodingConfig);
+
+  // Encode the audio
+  const encodeResponse = await encodingService.encode({
+    audioUrl: audioDownloadUrl,
+    outputUrl: encodedUploadResult.url,
+    outputFormat: "opus",
+    bitrate: 24,
+    r2AccessKeyId: env.R2_ACCESS_KEY_ID,
+    r2SecretAccessKey: env.R2_SECRET_ACCESS_KEY,
+    storageEndpoint: env.R2_ENDPOINT,
   });
 
-  if (!encodeResponse.ok) {
-    const errorText = await encodeResponse.text();
-    let errorData;
-
-    // Try to parse error response as JSON for 429 responses
-    try {
-      errorData = JSON.parse(errorText);
-    } catch {
-      // Not JSON, use error text
-      errorData = { error: errorText };
-    }
-
+  if (!encodeResponse.success) {
     throw new Error(
-      `Processing encoding failed: ${errorData.error || errorText}`
+      `Processing encoding failed: ${encodeResponse.error || "Unknown error"}`
     );
   }
 
-  const encodeResult: {
-    metadata: {
-      duration: number;
-    };
-  } = await encodeResponse.json();
+  // Extract duration from response
+  const duration = encodeResponse.input?.duration || 0;
 
   // Pre-sign download URL for the next step (prepare-chunk-storage)
   const encodedDownloadUrl = await r2Generator.generatePresignedUrl(
@@ -97,7 +110,7 @@ export async function encodeAudioForTTS(env: Env, workflowState: unknown) {
   const result = {
     encodedR2Key,
     encodedAudioUrl: encodedDownloadUrl, // Pre-signed for next step
-    duration: encodeResult.metadata?.duration || 0,
+    duration,
     signedUrls: [audioDownloadUrl, encodedUploadResult.url, encodedDownloadUrl],
   };
 

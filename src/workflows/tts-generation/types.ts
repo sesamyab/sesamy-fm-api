@@ -8,6 +8,7 @@ export const TtsGenerationParamsSchema = z.object({
   workflowId: z.string().optional(),
   voice: z.string().default("luna"),
   model: z.string().default("@cf/deepgram/aura-1"), // TTS model
+  provider: z.enum(["aura", "elevenlabs"]).default("aura"), // TTS provider
   organizationId: z.string().optional(),
 });
 
@@ -20,6 +21,7 @@ export const WorkflowStateSchema = z.object({
   scriptUrl: z.string().url(),
   voice: z.string(),
   model: z.string(),
+  provider: z.enum(["aura", "elevenlabs"]),
   taskId: z.string().optional(),
   organizationId: z.string().optional(),
   startedAt: z.string(),
@@ -37,6 +39,7 @@ export type Env = {
   R2_ACCESS_KEY_ID: string;
   R2_SECRET_ACCESS_KEY: string;
   R2_ENDPOINT: string;
+  ELEVENLABS_API_KEY: string; // ElevenLabs API key
   STORAGE_SIGNATURE_SECRET?: string;
   SERVICE_BASE_URL?: string; // Base URL for the service (e.g., https://your-worker.workers.dev)
 };

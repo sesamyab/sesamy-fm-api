@@ -42,7 +42,8 @@ export function createApp(
   auth0Domain?: string,
   auth0ClientId?: string,
   auth0ClientSecret?: string,
-  ttsGenerationWorkflow?: Workflow
+  ttsGenerationWorkflow?: Workflow,
+  transcriptionWorkflow?: Workflow
 ) {
   const app = new OpenAPIHono();
 
