@@ -2,9 +2,10 @@ import { OpenAPIHono } from "@hono/zod-openapi";
 import { swaggerUI } from "@hono/swagger-ui";
 import { cors } from "hono/cors";
 import { logger } from "hono/logger";
+import { registerComponent } from "hono-openapi-middlewares";
 
 import { errorHandler } from "./common/errors";
-import { authMiddleware, jwtMiddleware } from "./auth/middleware";
+import type { AppContext } from "./auth/types";
 import { registerHealthRoutes } from "./health/routes";
 import { registerShowRoutes } from "./shows/routes";
 import { registerEpisodeRoutes } from "./episodes/routes";
@@ -30,6 +31,7 @@ import { CampaignService } from "./campaigns/service";
 import { CreativeUploadService } from "./campaigns/creative-upload-service";
 import { OrganizationService } from "./organizations/service";
 import { Auth0Service } from "./auth/auth0-service";
+import { createAuthMiddleware } from "./auth/authentication";
 
 export function createApp(
   database?: D1Database,
@@ -41,9 +43,10 @@ export function createApp(
   importShowWorkflow?: Workflow,
   auth0Domain?: string,
   auth0ClientId?: string,
-  auth0ClientSecret?: string
+  auth0ClientSecret?: string,
+  ttsGenerationWorkflow?: Workflow
 ) {
-  const app = new OpenAPIHono();
+  const app = new OpenAPIHono<AppContext>();
 
   // Initialize services
   const eventPublisher = new EventPublisher();
@@ -117,8 +120,8 @@ export function createApp(
   app.onError(errorHandler);
 
   // Service info endpoint
-  app.get("/", (c) => {
-    return c.json({
+  app.get("/", (ctx) => {
+    return ctx.json({
       name: "podcast-service",
       version: "1.0.0",
     });
@@ -154,7 +157,11 @@ export function createApp(
   // Swagger UI
   app.get("/swagger", swaggerUI({ url: "/openapi.json" }));
 
-  // ===== ROUTES THAT DON'T REQUIRE AUTH =====
+  // Register the Bearer security component
+  app.use(registerComponent(app));
+
+  // Create auth middleware
+  app.use("*", createAuthMiddleware(app, { logLevel: "info" }));
 
   // Storage routes for signed file operations (no auth required)
   app.route("/storage", storageRoutes);
@@ -163,51 +170,10 @@ export function createApp(
   registerHealthRoutes(app, database);
 
   // RSS feeds don't require authentication (public access)
-  registerFeedRoutes(app, showService, episodeRepository, audioService);
-
-  // ===== ORGANIZATION ROUTES (REQUIRE ONLY VALID JWT) =====
-
-  // Apply JWT middleware for organizations (no org context required)
-  app.use("/organizations", jwtMiddleware);
-  app.use("/organizations/*", jwtMiddleware);
+  registerFeedRoutes(app, showService, episodeRepository);
 
   // Register organization routes
   registerOrganizationRoutes(app, organizationService);
-
-  // ===== ALL OTHER ROUTES (REQUIRE JWT + ORGANIZATION CONTEXT) =====
-
-  // Apply full auth middleware (JWT + organization validation)
-  app.use("/shows/*", (c, next) => {
-    // Skip auth for RSS feed endpoints
-    if (c.req.path.endsWith("/feed")) {
-      return next();
-    }
-    return authMiddleware(c, next);
-  });
-  app.use("/episodes/*", authMiddleware);
-  app.use("/audio/*", authMiddleware);
-  app.use("/tasks/*", authMiddleware);
-  app.use("/workflows/*", authMiddleware);
-  app.use("/campaigns/*", authMiddleware);
-  app.use("/tts/*", authMiddleware);
-
-  // Apply auth to transcription routes except /transcription/test
-  app.use("/transcription/*", (c, next) => {
-    // Skip auth for test endpoint
-    if (c.req.path === "/transcription/test") {
-      return next();
-    }
-    return authMiddleware(c, next);
-  });
-
-  // Apply auth to test routes except /test/tts (for easy testing)
-  app.use("/test/*", (c, next) => {
-    // Skip auth for TTS test endpoint
-    if (c.req.path === "/test/tts") {
-      return next();
-    }
-    return authMiddleware(c, next);
-  });
 
   // Register protected API routes
   registerShowRoutes(
@@ -223,7 +189,8 @@ export function createApp(
     episodeService,
     audioService,
     imageService,
-    bucket
+    bucket,
+    ttsGenerationWorkflow
   );
   registerAudioRoutes(app, audioService);
   app.route("/", createTaskRoutes(database));

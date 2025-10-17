@@ -9,6 +9,7 @@ export const AudioUploadSchema = z.object({
   mimeType: z.string(),
   url: z.string().url(),
   uploadedAt: z.string().datetime(),
+  message: z.string().optional(),
 });
 
 // Path parameters

@@ -1,9 +1,10 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import type { Env } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { ShowService } from "../shows/service";
 import { EpisodeRepository } from "../episodes/repository";
-import { AudioService } from "../audio/service";
+import { generateRSSFeed } from "./rss-generator";
 
 // Show ID parameter schema
 const FeedParamsSchema = z.object({
@@ -36,93 +37,16 @@ const getShowFeedRoute = createRoute({
   },
 });
 
-// Generate RSS feed for a show
-function generateRSSFeed(
-  show: any,
-  episodes: any[],
-  audioService?: AudioService
-): string {
-  const now = new Date().toUTCString();
-
-  // Sign image URL if it's an R2 URL
-  let imageUrl = show.imageUrl;
-  if (audioService && show.imageUrl && show.imageUrl.startsWith("r2://")) {
-    // For RSS feed, we'll use the R2 URL as is since we can't await here
-    // In a real implementation, you might want to pre-sign these URLs
-    imageUrl = show.imageUrl.replace(
-      "r2://",
-      "https://podcast-service-assets.sesamy.dev/"
-    );
-  }
-
-  const episodeItems = episodes
-    .filter((episode) => episode.published)
-    .map((episode) => {
-      let audioUrl = episode.audioUrl;
-      if (
-        audioService &&
-        episode.audioUrl &&
-        episode.audioUrl.startsWith("r2://")
-      ) {
-        audioUrl = episode.audioUrl.replace(
-          "r2://",
-          "https://podcast-service-assets.sesamy.dev/"
-        );
-      }
-
-      return `
-    <item>
-      <title><![CDATA[${episode.title || "Untitled Episode"}]]></title>
-      <description><![CDATA[${episode.description || ""}]]></description>
-      <pubDate>${new Date(episode.createdAt).toUTCString()}</pubDate>
-      <guid isPermaLink="false">${episode.id}</guid>
-      ${
-        audioUrl
-          ? `<enclosure url="${audioUrl}" type="audio/mpeg" length="0"/>`
-          : ""
-      }
-    </item>`;
-    })
-    .join("");
-
-  return `<?xml version="1.0" encoding="UTF-8"?>
-<rss version="2.0" xmlns:itunes="http://www.itunes.com/dtds/podcast-1.0.dtd">
-  <channel>
-    <title><![CDATA[${show.title || "Untitled Show"}]]></title>
-    <description><![CDATA[${show.description || ""}]]></description>
-    <link>https://podcast-service.sesamy.dev/shows/${show.id}</link>
-    <language>en-us</language>
-    <pubDate>${now}</pubDate>
-    <lastBuildDate>${now}</lastBuildDate>
-    <generator>Sesamy Podcast Service</generator>
-    ${
-      imageUrl
-        ? `<image><url>${imageUrl}</url><title><![CDATA[${
-            show.title || "Untitled Show"
-          }]]></title><link>https://podcast-service.sesamy.dev/shows/${
-            show.id
-          }</link></image>`
-        : ""
-    }
-    ${imageUrl ? `<itunes:image href="${imageUrl}"/>` : ""}
-    <itunes:category text="Technology"/>
-    <itunes:explicit>false</itunes:explicit>
-    ${episodeItems}
-  </channel>
-</rss>`;
-}
-
-export function registerFeedRoutes(
-  app: OpenAPIHono,
+export function registerFeedRoutes<T extends Env = any>(
+  app: OpenAPIHono<T>,
   showService: ShowService,
-  episodeRepository: EpisodeRepository,
-  audioService?: AudioService
+  episodeRepository: EpisodeRepository
 ) {
   // --------------------------------
   // GET /feeds/{show_id}
   // --------------------------------
-  app.openapi(getShowFeedRoute, async (c) => {
-    const { show_id } = c.req.valid("param");
+  app.openapi(getShowFeedRoute, async (ctx) => {
+    const { show_id } = ctx.req.valid("param");
     const show = await showService.getShowByIdPublic(show_id);
 
     if (!show) {
@@ -131,7 +55,7 @@ export function registerFeedRoutes(
         title: "Not Found",
         status: 404,
         detail: "Show not found",
-        instance: c.req.path,
+        instance: ctx.req.path,
       };
       throw new HTTPException(404, { message: JSON.stringify(problem) });
     }
@@ -143,9 +67,12 @@ export function registerFeedRoutes(
     });
 
     // Generate RSS feed
-    const rssFeed = generateRSSFeed(show, episodes, audioService);
+    const rssFeed = generateRSSFeed({
+      show,
+      episodes,
+    });
 
-    c.header("Content-Type", "application/rss+xml");
-    return c.text(rssFeed);
+    ctx.header("Content-Type", "application/rss+xml");
+    return ctx.text(rssFeed);
   });
 }

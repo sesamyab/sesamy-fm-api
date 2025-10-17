@@ -18,6 +18,7 @@ USE_NOVA3_FEATURES = "true"
 # Auth0 Configuration
 AUTH0_DOMAIN = "auth2.sesamy.dev"
 AUTH0_CLIENT_ID = "sesamy-fm"
+JWKS_URL = "https://token.sesamy.dev/.well-known/jwks.json"
 
 
 # Secrets to be set with: wrangler secret put <name>
@@ -57,6 +58,16 @@ class_name = "AudioProcessingWorkflow"
 name = "import-show-workflow"
 binding = "IMPORT_SHOW_WORKFLOW" 
 class_name = "ImportShowWorkflow"
+
+[[workflows]]
+name = "tts-generation-workflow"
+binding = "TTS_GENERATION_WORKFLOW"
+class_name = "TtsGenerationWorkflow"
+
+[[workflows]]
+name = "transcription-workflow"
+binding = "TRANSCRIPTION_WORKFLOW"
+class_name = "TranscriptionWorkflow"
 
 # Durable Objects bindings
 [[durable_objects.bindings]]

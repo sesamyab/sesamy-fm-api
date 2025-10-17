@@ -22,17 +22,17 @@ function createEncodingApp() {
   // CORS middleware
   app.use("*", async (c, next) => {
     await next();
-    c.header("Access-Control-Allow-Origin", "*");
-    c.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    c.header("Access-Control-Allow-Headers", "Content-Type");
+    ctx.header("Access-Control-Allow-Origin", "*");
+    ctx.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    ctx.header("Access-Control-Allow-Headers", "Content-Type");
   });
 
   // Handle OPTIONS requests
-  app.options("*", (c) => c.text("", 200));
+  app.options("*", (c) => ctx.text("", 200));
 
   // Health check endpoints
   app.get("/", (c) => {
-    return c.json({
+    return ctx.json({
       status: "ok",
       service: "encoding-service-lambda",
       timestamp: new Date().toISOString(),
@@ -48,7 +48,7 @@ function createEncodingApp() {
   });
 
   app.get("/health", (c) => {
-    return c.json({
+    return ctx.json({
       status: "ok",
       service: "encoding-service-lambda",
       timestamp: new Date().toISOString(),
@@ -68,7 +68,7 @@ function createEncodingApp() {
   // Warmup endpoint to keep Lambda warm
   app.post("/warmup", (c) => {
     console.log(`[WARMUP] Lambda warmed up at ${new Date().toISOString()}`);
-    return c.json({
+    return ctx.json({
       status: "warmed",
       service: "encoding-service-lambda",
       timestamp: new Date().toISOString(),
@@ -80,12 +80,12 @@ function createEncodingApp() {
   });
 
   // Audio metadata endpoint
-  app.post("/metadata", async (c) => {
+  app.post("/metadata", async (ctx) => {
     try {
-      const { audioUrl } = await c.req.json();
+      const { audioUrl } = await ctx.req.json();
 
       if (!audioUrl) {
-        return c.json(
+        return ctx.json(
           {
             success: false,
             error: "audioUrl is required",
@@ -97,7 +97,7 @@ function createEncodingApp() {
       console.log(`Getting metadata for: ${audioUrl}`);
       const audioProps = await getAudioProperties(audioUrl);
 
-      return c.json({
+      return ctx.json({
         success: true,
         duration: audioProps.duration,
         channels: audioProps.channels,
@@ -106,7 +106,7 @@ function createEncodingApp() {
       });
     } catch (error) {
       console.error("Metadata error:", error);
-      return c.json(
+      return ctx.json(
         {
           success: false,
           error: error.message,
@@ -117,14 +117,14 @@ function createEncodingApp() {
   });
 
   // Test encoding endpoint
-  app.post("/test", async (c) => {
+  app.post("/test", async (ctx) => {
     const jobId = `test-${uuidv4()}`;
     console.log(`[JOB ${jobId}] Starting test encoding job`);
     activeJobs.add(jobId);
     jobCounter++;
 
     try {
-      const { outputFormat = "mp3", bitrate = 128 } = await c.req.json();
+      const { outputFormat = "mp3", bitrate = 128 } = await ctx.req.json();
 
       console.log(
         `[JOB ${jobId}] Test encoding with format: ${outputFormat}, bitrate: ${bitrate}`
@@ -167,7 +167,7 @@ function createEncodingApp() {
       await fs.unlink(inputPath).catch(() => {});
       await fs.unlink(outputPath).catch(() => {});
 
-      return c.json({
+      return ctx.json({
         success: true,
         message: "Test encoding completed successfully",
         jobId,
@@ -182,7 +182,7 @@ function createEncodingApp() {
       });
     } catch (error) {
       console.error(`[JOB ${jobId}] Test encoding failed:`, error);
-      return c.json(
+      return ctx.json(
         {
           success: false,
           error: error.message,
@@ -197,7 +197,7 @@ function createEncodingApp() {
   });
 
   // Main encoding endpoint
-  app.post("/encode", async (c) => {
+  app.post("/encode", async (ctx) => {
     const jobId = `encode-${uuidv4()}`;
     console.log(`[JOB ${jobId}] Starting encoding job`);
     activeJobs.add(jobId);
@@ -212,10 +212,10 @@ function createEncodingApp() {
         r2AccessKeyId,
         r2SecretAccessKey,
         storageEndpoint,
-      } = await c.req.json();
+      } = await ctx.req.json();
 
       if (!audioUrl || !outputUrl) {
-        return c.json(
+        return ctx.json(
           {
             success: false,
             error: "audioUrl and outputUrl are required",
@@ -303,7 +303,7 @@ function createEncodingApp() {
 
       console.log(`[JOB ${jobId}] Encoding completed successfully`);
 
-      return c.json({
+      return ctx.json({
         success: true,
         message: "Encoding completed successfully",
         jobId,
@@ -327,7 +327,7 @@ function createEncodingApp() {
       });
     } catch (error) {
       console.error(`[JOB ${jobId}] Encoding failed:`, error);
-      return c.json(
+      return ctx.json(
         {
           success: false,
           error: error.message,

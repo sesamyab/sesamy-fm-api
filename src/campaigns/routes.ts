@@ -17,14 +17,9 @@ import {
 import { CampaignService } from "./service";
 import { AudioService } from "../audio/service";
 import { CreativeUploadService } from "./creative-upload-service";
-import {
-  requireAuth,
-  hasPermissions,
-  hasScopes,
-  getOrgIdFromContext,
-} from "../auth/middleware";
 import { NotFoundError } from "../common/errors";
-import { JWTPayload } from "../auth/types";
+import type { AppContext } from "../auth/types";
+import { getOrgId } from "../auth/helpers";
 
 // Utility function to sign URLs in creatives
 async function signUrlsInCreative(creative: any, audioService?: AudioService) {
@@ -68,10 +63,9 @@ export function createCampaignRoutes(
   audioService?: AudioService,
   creativeUploadService?: CreativeUploadService
 ) {
-  const app = new OpenAPIHono();
+  const app = new OpenAPIHono<AppContext>();
 
-  // Apply authentication middleware
-  app.use("*", requireAuth(["campaigns:read", "campaigns:write"]));
+  // Note: Auth middleware is applied globally in app.ts
 
   // --------------------------------
   // GET /campaigns
@@ -83,6 +77,11 @@ export function createCampaignRoutes(
       tags: ["campaigns"],
       summary: "Get campaigns",
       description: "Get all campaigns with pagination",
+      security: [
+        {
+          Bearer: ["campaigns:read"],
+        },
+      ],
       request: {
         query: PaginationSchema,
       },
@@ -105,18 +104,18 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const query = c.req.valid("query");
+      const query = ctx.req.valid("query");
 
       try {
         const result = await campaignService.getAllCampaigns(
           query,
           organizationId
         );
-        return c.json(result, 200);
+        return ctx.json(result, 200);
       } catch (error) {
         console.error("Error getting campaigns:", error);
         throw new HTTPException(500, { message: "Internal server error" });
@@ -156,11 +155,11 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const { campaign_id } = c.req.valid("param");
+      const { campaign_id } = ctx.req.valid("param");
 
       try {
         const campaign = await campaignService.getCampaignByIdWithDetails(
@@ -180,7 +179,7 @@ export function createCampaignRoutes(
           );
         }
 
-        return c.json(campaign, 200);
+        return ctx.json(campaign, 200);
       } catch (error) {
         if (error instanceof NotFoundError) {
           throw new HTTPException(404, { message: error.message });
@@ -221,18 +220,18 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const body = c.req.valid("json");
+      const body = ctx.req.valid("json");
 
       try {
         const campaign = await campaignService.createCampaign(
           body,
           organizationId
         );
-        return c.json(campaign, 201);
+        return ctx.json(campaign, 201);
       } catch (error) {
         console.error("Error creating campaign:", error);
         throw new HTTPException(500, { message: "Internal server error" });
@@ -279,12 +278,12 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const { campaign_id } = c.req.valid("param");
-      const body = c.req.valid("json");
+      const { campaign_id } = ctx.req.valid("param");
+      const body = ctx.req.valid("json");
 
       try {
         const campaign = await campaignService.updateCampaign(
@@ -292,7 +291,7 @@ export function createCampaignRoutes(
           body,
           organizationId
         );
-        return c.json(campaign, 200);
+        return ctx.json(campaign, 200);
       } catch (error) {
         if (error instanceof NotFoundError) {
           throw new HTTPException(404, { message: error.message });
@@ -343,12 +342,12 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const { campaign_id } = c.req.valid("param");
-      const body = c.req.valid("json");
+      const { campaign_id } = ctx.req.valid("param");
+      const body = ctx.req.valid("json");
 
       try {
         const campaign = await campaignService.updateCampaign(
@@ -356,7 +355,7 @@ export function createCampaignRoutes(
           body,
           organizationId
         );
-        return c.json(campaign, 200);
+        return ctx.json(campaign, 200);
       } catch (error) {
         if (error instanceof NotFoundError) {
           throw new HTTPException(404, { message: error.message });
@@ -394,11 +393,11 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const { campaign_id } = c.req.valid("param");
+      const { campaign_id } = ctx.req.valid("param");
 
       try {
         const deleted = await campaignService.deleteCampaign(
@@ -408,7 +407,7 @@ export function createCampaignRoutes(
         if (!deleted) {
           throw new HTTPException(404, { message: "Campaign not found" });
         }
-        return c.body(null, 204);
+        return ctx.body(null, 204);
       } catch (error) {
         if (error instanceof HTTPException) {
           throw error;
@@ -451,11 +450,11 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const { campaign_id } = c.req.valid("param");
+      const { campaign_id } = ctx.req.valid("param");
 
       try {
         const creatives = await campaignService.getCampaignCreatives(
@@ -472,7 +471,7 @@ export function createCampaignRoutes(
             )
           : creatives;
 
-        return c.json(signedCreatives, 200);
+        return ctx.json(signedCreatives, 200);
       } catch (error) {
         if (error instanceof NotFoundError) {
           throw new HTTPException(404, { message: error.message });
@@ -522,12 +521,12 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const { campaign_id } = c.req.valid("param");
-      const body = c.req.valid("json");
+      const { campaign_id } = ctx.req.valid("param");
+      const body = ctx.req.valid("json");
 
       try {
         const creative = await campaignService.createCreative(
@@ -541,7 +540,7 @@ export function createCampaignRoutes(
           ? await signUrlsInCreative(creative, audioService)
           : creative;
 
-        return c.json(signedCreative, 201);
+        return ctx.json(signedCreative, 201);
       } catch (error) {
         if (error instanceof NotFoundError) {
           throw new HTTPException(404, { message: error.message });
@@ -584,11 +583,11 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const { campaign_id, creative_id } = c.req.valid("param");
+      const { campaign_id, creative_id } = ctx.req.valid("param");
 
       try {
         const creative = await campaignService.getCreativeById(
@@ -605,7 +604,7 @@ export function createCampaignRoutes(
           ? await signUrlsInCreative(creative, audioService)
           : creative;
 
-        return c.json(signedCreative, 200);
+        return ctx.json(signedCreative, 200);
       } catch (error) {
         if (error instanceof HTTPException) {
           throw error;
@@ -655,12 +654,12 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const { campaign_id, creative_id } = c.req.valid("param");
-      const body = c.req.valid("json");
+      const { campaign_id, creative_id } = ctx.req.valid("param");
+      const body = ctx.req.valid("json");
 
       try {
         const creative = await campaignService.updateCreative(
@@ -675,7 +674,7 @@ export function createCampaignRoutes(
           ? await signUrlsInCreative(creative, audioService)
           : creative;
 
-        return c.json(signedCreative, 200);
+        return ctx.json(signedCreative, 200);
       } catch (error) {
         if (error instanceof NotFoundError) {
           throw new HTTPException(404, { message: error.message });
@@ -725,12 +724,12 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const { campaign_id, creative_id } = c.req.valid("param");
-      const body = c.req.valid("json");
+      const { campaign_id, creative_id } = ctx.req.valid("param");
+      const body = ctx.req.valid("json");
 
       try {
         const creative = await campaignService.updateCreative(
@@ -745,7 +744,7 @@ export function createCampaignRoutes(
           ? await signUrlsInCreative(creative, audioService)
           : creative;
 
-        return c.json(signedCreative, 200);
+        return ctx.json(signedCreative, 200);
       } catch (error) {
         if (error instanceof NotFoundError) {
           throw new HTTPException(404, { message: error.message });
@@ -783,11 +782,11 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const { campaign_id, creative_id } = c.req.valid("param");
+      const { campaign_id, creative_id } = ctx.req.valid("param");
 
       try {
         const deleted = await campaignService.deleteCreative(
@@ -798,7 +797,7 @@ export function createCampaignRoutes(
         if (!deleted) {
           throw new HTTPException(404, { message: "Creative not found" });
         }
-        return c.body(null, 204);
+        return ctx.body(null, 204);
       } catch (error) {
         if (error instanceof HTTPException) {
           throw error;
@@ -850,18 +849,18 @@ export function createCampaignRoutes(
         },
       },
     },
-    async (c) => {
+    async (ctx) => {
       // Extract organization ID from context variables (set by auth middleware)
-      const organizationId = getOrgIdFromContext(c);
+      const organizationId = getOrgId(ctx);
 
-      const { campaign_id } = c.req.valid("param");
+      const { campaign_id } = ctx.req.valid("param");
 
       try {
         const shows = await campaignService.getCampaignShows(
           campaign_id,
           organizationId
         );
-        return c.json(shows, 200);
+        return ctx.json(shows, 200);
       } catch (error) {
         if (error instanceof NotFoundError) {
           throw new HTTPException(404, { message: error.message });
@@ -917,30 +916,16 @@ export function createCampaignRoutes(
             description: "Creative not found",
           },
         },
-        security: [{ Bearer: [] }],
+        security: [{ Bearer: ["campaigns:write"] }],
       },
-      async (c) => {
-        // Check auth
-        const payload = c.get("jwtPayload") as JWTPayload;
-        const hasWritePermission = hasPermissions(payload, ["campaigns:write"]);
-        const hasWriteScope = hasScopes(payload, ["campaigns:write"]);
-        if (!hasWritePermission && !hasWriteScope) {
-          const problem = {
-            type: "forbidden",
-            title: "Forbidden",
-            status: 403,
-            detail:
-              "Required permissions: campaigns:write or scope: campaigns:write",
-            instance: c.req.path,
-          };
-          throw new HTTPException(403, { message: JSON.stringify(problem) });
-        }
+      async (ctx) => {
+        // Check write permission
 
-        const { campaign_id, creative_id } = c.req.valid("param");
+        const { campaign_id, creative_id } = ctx.req.valid("param");
 
         try {
           // Parse multipart form data
-          const formData = await c.req.formData();
+          const formData = await ctx.req.formData();
           const audioFile = formData.get("audio") as File | null;
 
           if (!audioFile) {
@@ -949,19 +934,19 @@ export function createCampaignRoutes(
               title: "Validation Error",
               status: 400,
               detail: "Audio file is required",
-              instance: c.req.path,
+              instance: ctx.req.path,
             };
             throw new HTTPException(400, { message: JSON.stringify(problem) });
           }
 
-          // Convert File to Buffer
-          const buffer = Buffer.from(await audioFile.arrayBuffer());
+          // Get ArrayBuffer directly (no need for Node Buffer in Workers)
+          const arrayBuffer = await audioFile.arrayBuffer();
 
           const fileData = {
             fileName: audioFile.name,
             fileSize: audioFile.size,
             mimeType: audioFile.type,
-            buffer,
+            buffer: arrayBuffer,
           };
 
           const upload = await creativeUploadService.uploadCreativeAudio(
@@ -969,7 +954,7 @@ export function createCampaignRoutes(
             creative_id,
             fileData
           );
-          return c.json(upload, 201);
+          return ctx.json(upload, 201);
         } catch (error) {
           if (error instanceof NotFoundError) {
             const problem = {
@@ -977,7 +962,7 @@ export function createCampaignRoutes(
               title: "Not Found",
               status: 404,
               detail: "Creative not found",
-              instance: c.req.path,
+              instance: ctx.req.path,
             };
             throw new HTTPException(404, { message: JSON.stringify(problem) });
           }
@@ -1034,30 +1019,16 @@ export function createCampaignRoutes(
             description: "Creative not found",
           },
         },
-        security: [{ Bearer: [] }],
+        security: [{ Bearer: ["campaigns:write"] }],
       },
-      async (c) => {
-        // Check auth
-        const payload = c.get("jwtPayload") as JWTPayload;
-        const hasWritePermission = hasPermissions(payload, ["campaigns:write"]);
-        const hasWriteScope = hasScopes(payload, ["campaigns:write"]);
-        if (!hasWritePermission && !hasWriteScope) {
-          const problem = {
-            type: "forbidden",
-            title: "Forbidden",
-            status: 403,
-            detail:
-              "Required permissions: campaigns:write or scope: campaigns:write",
-            instance: c.req.path,
-          };
-          throw new HTTPException(403, { message: JSON.stringify(problem) });
-        }
+      async (ctx) => {
+        // Check write permission
 
-        const { campaign_id, creative_id } = c.req.valid("param");
+        const { campaign_id, creative_id } = ctx.req.valid("param");
 
         try {
           // Parse multipart form data
-          const formData = await c.req.formData();
+          const formData = await ctx.req.formData();
           const videoFile = formData.get("video") as File | null;
 
           if (!videoFile) {
@@ -1066,7 +1037,7 @@ export function createCampaignRoutes(
               title: "Validation Error",
               status: 400,
               detail: "Video file is required",
-              instance: c.req.path,
+              instance: ctx.req.path,
             };
             throw new HTTPException(400, { message: JSON.stringify(problem) });
           }
@@ -1086,7 +1057,7 @@ export function createCampaignRoutes(
             creative_id,
             fileData
           );
-          return c.json(upload, 201);
+          return ctx.json(upload, 201);
         } catch (error) {
           if (error instanceof NotFoundError) {
             const problem = {
@@ -1094,7 +1065,7 @@ export function createCampaignRoutes(
               title: "Not Found",
               status: 404,
               detail: "Creative not found",
-              instance: c.req.path,
+              instance: ctx.req.path,
             };
             throw new HTTPException(404, { message: JSON.stringify(problem) });
           }
@@ -1151,30 +1122,16 @@ export function createCampaignRoutes(
             description: "Creative not found",
           },
         },
-        security: [{ Bearer: [] }],
+        security: [{ Bearer: ["campaigns:write"] }],
       },
-      async (c) => {
-        // Check auth
-        const payload = c.get("jwtPayload") as JWTPayload;
-        const hasWritePermission = hasPermissions(payload, ["campaigns:write"]);
-        const hasWriteScope = hasScopes(payload, ["campaigns:write"]);
-        if (!hasWritePermission && !hasWriteScope) {
-          const problem = {
-            type: "forbidden",
-            title: "Forbidden",
-            status: 403,
-            detail:
-              "Required permissions: campaigns:write or scope: campaigns:write",
-            instance: c.req.path,
-          };
-          throw new HTTPException(403, { message: JSON.stringify(problem) });
-        }
+      async (ctx) => {
+        // Check write permission
 
-        const { campaign_id, creative_id } = c.req.valid("param");
+        const { campaign_id, creative_id } = ctx.req.valid("param");
 
         try {
           // Parse multipart form data
-          const formData = await c.req.formData();
+          const formData = await ctx.req.formData();
           const imageFile = formData.get("image") as File | null;
 
           if (!imageFile) {
@@ -1183,7 +1140,7 @@ export function createCampaignRoutes(
               title: "Validation Error",
               status: 400,
               detail: "Image file is required",
-              instance: c.req.path,
+              instance: ctx.req.path,
             };
             throw new HTTPException(400, { message: JSON.stringify(problem) });
           }
@@ -1203,7 +1160,7 @@ export function createCampaignRoutes(
             creative_id,
             fileData
           );
-          return c.json(upload, 201);
+          return ctx.json(upload, 201);
         } catch (error) {
           if (error instanceof NotFoundError) {
             const problem = {
@@ -1211,7 +1168,7 @@ export function createCampaignRoutes(
               title: "Not Found",
               status: 404,
               detail: "Creative not found",
-              instance: c.req.path,
+              instance: ctx.req.path,
             };
             throw new HTTPException(404, { message: JSON.stringify(problem) });
           }

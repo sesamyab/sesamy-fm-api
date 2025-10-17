@@ -9,23 +9,23 @@ const storage = new Hono<{
 }>();
 
 // Handle file operations with signature verification
-storage.all("/file", async (c) => {
-  const method = c.req.method;
-  const path = c.req.query("path");
-  const expire = c.req.query("expire");
-  const signature = c.req.query("signature");
-  const contentType = c.req.query("contentType");
+storage.all("/file", async (ctx) => {
+  const method = ctx.req.method;
+  const path = ctx.req.query("path");
+  const expire = ctx.req.query("expire");
+  const signature = ctx.req.query("signature");
+  const contentType = ctx.req.query("contentType");
 
   // Validate required parameters
   if (!path || !expire || !signature) {
-    return c.json(
+    return ctx.json(
       { error: "Missing required parameters: path, expire, signature" },
       400
     );
   }
 
   // Create storage service
-  const storageService = new StorageService(c.env);
+  const storageService = new StorageService(ctx.env);
 
   // Verify signature
   const isValid = await storageService.verifySignature(
@@ -35,7 +35,7 @@ storage.all("/file", async (c) => {
     signature
   );
   if (!isValid) {
-    return c.json({ error: "Invalid or expired signature" }, 403);
+    return ctx.json({ error: "Invalid or expired signature" }, 403);
   }
 
   try {
@@ -58,13 +58,13 @@ storage.all("/file", async (c) => {
       });
     } else if (method === "PUT") {
       // Upload file
-      const body = await c.req.arrayBuffer();
+      const body = await ctx.req.arrayBuffer();
 
       const result = await storageService.uploadFile(path, body, {
         contentType: contentType || "application/octet-stream",
       });
 
-      return c.json({
+      return ctx.json({
         success: true,
         key: result.key,
         size: result.size,
@@ -72,16 +72,16 @@ storage.all("/file", async (c) => {
         uploaded: result.uploaded,
       });
     } else {
-      return c.json({ error: `Method ${method} not supported` }, 405);
+      return ctx.json({ error: `Method ${method} not supported` }, 405);
     }
   } catch (error) {
     console.error("Storage operation failed:", error);
 
     if (error instanceof Error && error.message.includes("not found")) {
-      return c.json({ error: "File not found" }, 404);
+      return ctx.json({ error: "File not found" }, 404);
     }
 
-    return c.json(
+    return ctx.json(
       {
         error: "Storage operation failed",
         details: error instanceof Error ? error.message : String(error),

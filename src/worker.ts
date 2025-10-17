@@ -10,6 +10,8 @@ import { TaskProcessor } from "./tasks/processor";
 import { EncodingContainer } from "./encoding/container";
 import { AudioProcessingWorkflow } from "./workflows/audio-processing";
 import { ImportShowWorkflow } from "./workflows/import-show";
+import { TtsGenerationWorkflow } from "./workflows/tts-generation";
+import { TranscriptionWorkflow } from "./workflows/transcription";
 
 // Interface for Cloudflare Worker environment
 interface CloudflareEnv {
@@ -24,6 +26,8 @@ interface CloudflareEnv {
   ENCODING_CONTAINER: DurableObjectNamespace;
   AUDIO_PROCESSING_WORKFLOW?: Workflow;
   IMPORT_SHOW_WORKFLOW?: Workflow;
+  TTS_GENERATION_WORKFLOW?: Workflow;
+  TRANSCRIPTION_WORKFLOW?: Workflow;
   // AWS Lambda encoding service configuration (optional)
   AWS_LAMBDA_ENCODING_URL?: string;
   AWS_LAMBDA_API_KEY?: string;
@@ -32,6 +36,8 @@ interface CloudflareEnv {
   AUTH0_DOMAIN?: string;
   AUTH0_CLIENT_ID?: string;
   AUTH0_CLIENT_SECRET?: string;
+  // JWKS URL for JWT verification
+  JWKS_URL: string;
   // TTS configuration
   TTS_DEFAULT_MODEL?: string;
   TTS_DEFAULT_VOICE?: string;
@@ -54,7 +60,8 @@ export default {
       env.IMPORT_SHOW_WORKFLOW,
       env.AUTH0_DOMAIN,
       env.AUTH0_CLIENT_ID,
-      env.AUTH0_CLIENT_SECRET
+      env.AUTH0_CLIENT_SECRET,
+      env.TTS_GENERATION_WORKFLOW
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;
@@ -100,5 +107,11 @@ export default {
   },
 };
 
-// Export the EncodingContainer, AudioProcessingWorkflow, and ImportShowWorkflow for Cloudflare Workers
-export { EncodingContainer, AudioProcessingWorkflow, ImportShowWorkflow };
+// Export the EncodingContainer, AudioProcessingWorkflow, ImportShowWorkflow, TtsGenerationWorkflow, and TranscriptionWorkflow for Cloudflare Workers
+export {
+  EncodingContainer,
+  AudioProcessingWorkflow,
+  ImportShowWorkflow,
+  TtsGenerationWorkflow,
+  TranscriptionWorkflow,
+};

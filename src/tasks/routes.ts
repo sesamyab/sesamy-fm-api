@@ -2,9 +2,9 @@ import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { TaskService } from "./service.js";
-import { requireAuth, getOrgIdFromContext } from "../auth/middleware.js";
 import { NotFoundError } from "../common/errors.js";
-import { JWTPayload } from "../auth/types.js";
+import type { AppContext } from "../auth/types";
+import { getOrgId } from "../auth/helpers";
 
 // Task status enum
 const TaskStatusSchema = z.enum(["pending", "processing", "done", "failed"]);
@@ -50,144 +50,8 @@ const TaskParamsSchema = z.object({
   task_id: z.coerce.number(),
 });
 
-// Test encoding request schema
-const TestEncodeSchema = z.object({
-  audioUrl: z.string().url().optional(),
-  outputFormat: z.enum(["mp3", "aac"]).optional().default("mp3"),
-  bitrate: z.coerce.number().min(64).max(320).optional().default(128),
-});
-
-// Test audio preprocessing request schema
-const TestAudioPreprocessSchema = z.object({
-  audioUrl: z.string().url().optional(),
-  episodeId: z.string().optional(),
-});
-
-// Create task route
-const createTaskRoute = createRoute({
-  method: "post",
-  path: "/tasks",
-  tags: ["tasks"],
-  summary: "Create a new task",
-  description: "Create a new background processing task",
-  security: [{ Bearer: [] }],
-  request: {
-    body: {
-      content: {
-        "application/json": {
-          schema: CreateTaskSchema,
-        },
-      },
-    },
-  },
-  responses: {
-    201: {
-      description: "Task created successfully",
-      content: {
-        "application/json": {
-          schema: TaskSchema,
-        },
-      },
-    },
-    400: {
-      description: "Invalid request",
-    },
-    401: {
-      description: "Unauthorized",
-    },
-  },
-});
-
-// Get tasks route
-const getTasksRoute = createRoute({
-  method: "get",
-  path: "/tasks",
-  tags: ["tasks"],
-  summary: "List tasks",
-  description:
-    "Get a list of tasks with optional status filtering and sorting. Default sort is by created_at in descending order (newest first).",
-  security: [{ Bearer: [] }],
-  request: {
-    query: TaskQuerySchema,
-  },
-  responses: {
-    200: {
-      description: "List of tasks",
-      content: {
-        "application/json": {
-          schema: z.array(TaskSchema),
-        },
-      },
-    },
-    401: {
-      description: "Unauthorized",
-    },
-  },
-});
-
-// Get specific task route
-const getTaskRoute = createRoute({
-  method: "get",
-  path: "/tasks/{task_id}",
-  tags: ["tasks"],
-  summary: "Get a specific task",
-  description: "Get details of a specific task by ID",
-  security: [{ Bearer: [] }],
-  request: {
-    params: TaskParamsSchema,
-  },
-  responses: {
-    200: {
-      description: "Task details",
-      content: {
-        "application/json": {
-          schema: TaskSchema,
-        },
-      },
-    },
-    404: {
-      description: "Task not found",
-    },
-    401: {
-      description: "Unauthorized",
-    },
-  },
-});
-
-// Retry task route
-const retryTaskRoute = createRoute({
-  method: "post",
-  path: "/tasks/{task_id}/retry",
-  tags: ["tasks"],
-  summary: "Retry a failed task",
-  description: "Reset a failed task to pending status and queue it for retry",
-  security: [{ Bearer: [] }],
-  request: {
-    params: TaskParamsSchema,
-  },
-  responses: {
-    200: {
-      description: "Task retried successfully",
-      content: {
-        "application/json": {
-          schema: TaskSchema,
-        },
-      },
-    },
-    404: {
-      description: "Task not found",
-    },
-    401: {
-      description: "Unauthorized",
-    },
-    400: {
-      description: "Task cannot be retried",
-    },
-  },
-});
-
 export const createTaskRoutes = (database?: D1Database) => {
-  const app = new OpenAPIHono();
+  const app = new OpenAPIHono<AppContext>();
   const taskService = new TaskService(database);
 
   // Helper function to serialize task data for API response
@@ -197,79 +61,200 @@ export const createTaskRoutes = (database?: D1Database) => {
     result: task.result ? JSON.parse(task.result) : null,
   });
 
-  // Apply authentication middleware - using colon notation to match user permissions
-  app.use("*", requireAuth(["podcast:read", "podcast:write"]));
-
   // --------------------------------
   // POST /tasks
   // --------------------------------
-  app.openapi(createTaskRoute, async (c) => {
-    const body = c.req.valid("json");
-    const organizationId = getOrgIdFromContext(c);
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/tasks",
+      tags: ["tasks"],
+      summary: "Create a new task",
+      description: "Create a new background processing task",
+      security: [{ Bearer: ["tasks:write"] }],
+      request: {
+        body: {
+          content: {
+            "application/json": {
+              schema: CreateTaskSchema,
+            },
+          },
+        },
+      },
+      responses: {
+        201: {
+          description: "Task created successfully",
+          content: {
+            "application/json": {
+              schema: TaskSchema,
+            },
+          },
+        },
+        400: {
+          description: "Invalid request",
+        },
+        401: {
+          description: "Unauthorized",
+        },
+      },
+    }),
+    async (ctx) => {
+      const body = ctx.req.valid("json");
+      const organizationId = getOrgId(ctx);
 
-    const task = await taskService.createTask(
-      body.type,
-      body.payload,
-      organizationId
-    );
-    return c.json(serializeTask(task), 201);
-  });
+      const task = await taskService.createTask(
+        body.type,
+        body.payload,
+        organizationId
+      );
+      return ctx.json(serializeTask(task), 201);
+    }
+  );
 
   // --------------------------------
   // GET /tasks
   // --------------------------------
-  app.openapi(getTasksRoute, async (c) => {
-    const query = c.req.valid("query");
-    const organizationId = getOrgIdFromContext(c);
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/tasks",
+      tags: ["tasks"],
+      summary: "List tasks",
+      description:
+        "Get a list of tasks with optional status filtering and sorting. Default sort is by created_at in descending order (newest first).",
+      security: [{ Bearer: ["podcast:read"] }],
+      request: {
+        query: TaskQuerySchema,
+      },
+      responses: {
+        200: {
+          description: "List of tasks",
+          content: {
+            "application/json": {
+              schema: z.array(TaskSchema),
+            },
+          },
+        },
+        401: {
+          description: "Unauthorized",
+        },
+      },
+    }),
+    async (ctx) => {
+      const query = ctx.req.valid("query");
+      const organizationId = getOrgId(ctx);
 
-    const tasks = await taskService.getTasks(
-      query.status,
-      query.limit,
-      query.offset,
-      query.sortBy,
-      query.sortOrder,
-      organizationId
-    );
+      const tasks = await taskService.getTasks(
+        query.status,
+        query.limit,
+        query.offset,
+        query.sortBy,
+        query.sortOrder,
+        organizationId
+      );
 
-    return c.json(tasks.map(serializeTask));
-  });
+      return ctx.json(tasks.map(serializeTask));
+    }
+  );
 
   // --------------------------------
   // GET /tasks/{task_id}
   // --------------------------------
-  app.openapi(getTaskRoute, async (c) => {
-    const { task_id } = c.req.valid("param");
-    const organizationId = getOrgIdFromContext(c);
+  app.openapi(
+    createRoute({
+      method: "get",
+      path: "/tasks/{task_id}",
+      tags: ["tasks"],
+      summary: "Get a specific task",
+      description: "Get details of a specific task by ID",
+      security: [{ Bearer: ["podcast:read"] }],
+      request: {
+        params: TaskParamsSchema,
+      },
+      responses: {
+        200: {
+          description: "Task details",
+          content: {
+            "application/json": {
+              schema: TaskSchema,
+            },
+          },
+        },
+        404: {
+          description: "Task not found",
+        },
+        401: {
+          description: "Unauthorized",
+        },
+      },
+    }),
+    async (ctx) => {
+      const { task_id } = ctx.req.valid("param");
+      const organizationId = getOrgId(ctx);
 
-    const task = await taskService.getTask(task_id, organizationId);
+      const task = await taskService.getTask(task_id, organizationId);
 
-    if (!task) {
-      throw new NotFoundError(`Task with ID ${task_id} not found`);
+      if (!task) {
+        throw new NotFoundError(`Task with ID ${task_id} not found`);
+      }
+
+      return ctx.json(serializeTask(task));
     }
-
-    return c.json(serializeTask(task));
-  });
+  );
 
   // --------------------------------
   // POST /tasks/{task_id}/retry
   // --------------------------------
-  app.openapi(retryTaskRoute, async (c) => {
-    const { task_id } = c.req.valid("param");
-    const organizationId = getOrgIdFromContext(c);
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/tasks/{task_id}/retry",
+      tags: ["tasks"],
+      summary: "Retry a failed task",
+      description:
+        "Reset a failed task to pending status and queue it for retry",
+      security: [{ Bearer: ["podcast:write"] }],
+      request: {
+        params: TaskParamsSchema,
+      },
+      responses: {
+        200: {
+          description: "Task retried successfully",
+          content: {
+            "application/json": {
+              schema: TaskSchema,
+            },
+          },
+        },
+        404: {
+          description: "Task not found",
+        },
+        401: {
+          description: "Unauthorized",
+        },
+        400: {
+          description: "Task cannot be retried",
+        },
+      },
+    }),
+    async (ctx) => {
+      const { task_id } = ctx.req.valid("param");
+      const organizationId = getOrgId(ctx);
 
-    try {
-      const task = await taskService.retryTask(task_id, organizationId);
-      return c.json(serializeTask(task));
-    } catch (error) {
-      if (error instanceof Error) {
-        if (error.message === "Task not found") {
-          throw new NotFoundError(`Task with ID ${task_id} not found`);
+      try {
+        const task = await taskService.retryTask(task_id, organizationId);
+        return ctx.json(serializeTask(task));
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message === "Task not found") {
+            throw new NotFoundError(`Task with ID ${task_id} not found`);
+          }
+          throw new HTTPException(400, { message: error.message });
         }
-        throw new HTTPException(400, { message: error.message });
+        throw new HTTPException(500, { message: "Internal server error" });
       }
-      throw new HTTPException(500, { message: "Internal server error" });
     }
-  });
+  );
 
   return app;
 };

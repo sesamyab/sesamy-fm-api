@@ -58,7 +58,7 @@ export class AudioService {
       fileName: string;
       fileSize: number;
       mimeType: string;
-      buffer: Buffer;
+      buffer: ArrayBuffer | Buffer;
     }
   ) {
     // Verify episode exists
@@ -254,11 +254,13 @@ export class AudioService {
       let eventSignedUrl = audioR2Key;
       if (this.presignedUrlGenerator && audioR2Key.startsWith("r2://")) {
         try {
+          const r2Key = audioR2Key.replace("r2://", "");
           eventSignedUrl =
             await this.presignedUrlGenerator.generatePresignedUrl(
-              audioR2Key.replace("r2://", ""),
-              "get",
-              3600 // 1 hour
+              "podcast-service-assets",
+              r2Key,
+              3600, // 1 hour
+              "GET"
             );
         } catch (error) {
           console.warn(
@@ -372,6 +374,31 @@ export class AudioService {
       );
     } catch (error) {
       console.warn("Failed to generate presigned URL for key:", r2Key, error);
+      return null;
+    }
+  }
+
+  async generatePresignedUrlWithCors(r2Key: string): Promise<string | null> {
+    if (!this.presignedUrlGenerator) {
+      return null;
+    }
+
+    try {
+      // Force AWS signature even with custom domain for CORS-sensitive downloads
+      return await this.presignedUrlGenerator.generatePresignedUrl(
+        "podcast-service-assets",
+        r2Key,
+        28800, // 8 hours
+        "GET",
+        undefined,
+        true // forceSignature for CORS support
+      );
+    } catch (error) {
+      console.warn(
+        "Failed to generate CORS presigned URL for key:",
+        r2Key,
+        error
+      );
       return null;
     }
   }

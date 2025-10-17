@@ -9,6 +9,13 @@ export interface JWTPayload {
   aud?: string;
   exp?: number;
   iat?: number;
+  [key: string]: any; // Allow custom claims like "https://sesamy.com/org_id"
+}
+
+// User type stored in context by hono-openapi-middlewares
+export interface User extends JWTPayload {
+  // The package stores the full JWT payload in ctx.get("user")
+  // We can access standard and custom claims from here
 }
 
 export interface AuthContext {
@@ -19,13 +26,26 @@ export interface AuthContext {
   };
 }
 
-// Define context variables that will be available via c.get() and c.set()
+// Define context variables that will be available via ctx.get() and ctx.set()
 export interface ContextVariables {
-  jwtPayload: JWTPayload;
-  orgId: string;
+  user: User; // User data from JWT token
+  user_id: string; // User ID for backward compatibility
+  jwtPayload?: JWTPayload; // Backward compatibility
+  orgId?: string; // Backward compatibility
 }
 
-// Type for Hono context with our custom variables
+// Bindings for authentication and security
+// Includes all requirements from both AuthenticationGenerics and RegisterComponentGenerics
+export interface AppBindings {
+  JWKS_URL: string;
+  AUTH_URL: string;
+  JWKS_SERVICE?: {
+    fetch: typeof fetch;
+  };
+}
+
+// Type for Hono context with our custom variables and bindings
 export type AppContext = {
   Variables: ContextVariables;
+  Bindings: AppBindings;
 };
