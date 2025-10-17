@@ -2,7 +2,7 @@ import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { ZodError } from "zod";
 
-export const errorHandler: ErrorHandler = (err, c) => {
+export const errorHandler: ErrorHandler = (err, ctx) => {
   // Handle Zod validation errors
   if (err instanceof ZodError) {
     const validationErrors = err.errors
@@ -14,10 +14,10 @@ export const errorHandler: ErrorHandler = (err, c) => {
       title: "Validation Error",
       status: 400,
       detail: validationErrors,
-      instance: c.req.path,
+      instance: ctx.req.path,
     };
 
-    return c.json(problem, 400);
+    return ctx.json(problem, 400);
   }
 
   // Handle HTTP exceptions
@@ -64,11 +64,11 @@ export const errorHandler: ErrorHandler = (err, c) => {
         title,
         status,
         detail: err.message || title,
-        instance: c.req.path,
+        instance: ctx.req.path,
       };
     }
 
-    return c.json(problem, err.status);
+    return ctx.json(problem, err.status);
   }
 
   // Handle generic errors
@@ -77,10 +77,10 @@ export const errorHandler: ErrorHandler = (err, c) => {
     title: "Internal Server Error",
     status: 500,
     detail: "An unexpected error occurred",
-    instance: c.req.path,
+    instance: ctx.req.path,
   };
 
-  return c.json(problem, 500);
+  return ctx.json(problem, 500);
 };
 
 export class ValidationError extends Error {

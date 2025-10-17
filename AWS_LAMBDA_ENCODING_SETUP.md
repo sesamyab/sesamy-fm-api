@@ -116,6 +116,7 @@ wrangler tail
 ```
 
 The logs should show:
+
 ```
 Using AWS Lambda encoding service
 ```
@@ -141,22 +142,23 @@ aws logs tail /aws/lambda/sesamy-encoding-dev --follow
 
 ## Environment Variables Summary
 
-| Variable | Type | Required | Description |
-|----------|------|----------|-------------|
-| `ENCODING_SERVICE_PROVIDER` | Var | No | Set to `"aws"` to use Lambda (default) or `"cloudflare"` |
-| `AWS_LAMBDA_ENCODING_URL` | Secret | Yes* | Lambda function URL from CDK deployment |
-| `AWS_LAMBDA_API_KEY` | Secret | No | Optional API key for secured access |
-| `R2_ACCESS_KEY_ID` | Secret | Yes | R2 access key (passed to Lambda) |
-| `R2_SECRET_ACCESS_KEY` | Secret | Yes | R2 secret key (passed to Lambda) |
-| `R2_ENDPOINT` | Var | Yes | R2 endpoint URL |
+| Variable                    | Type   | Required | Description                                              |
+| --------------------------- | ------ | -------- | -------------------------------------------------------- |
+| `ENCODING_SERVICE_PROVIDER` | Var    | No       | Set to `"aws"` to use Lambda (default) or `"cloudflare"` |
+| `AWS_LAMBDA_ENCODING_URL`   | Secret | Yes\*    | Lambda function URL from CDK deployment                  |
+| `AWS_LAMBDA_API_KEY`        | Secret | No       | Optional API key for secured access                      |
+| `R2_ACCESS_KEY_ID`          | Secret | Yes      | R2 access key (passed to Lambda)                         |
+| `R2_SECRET_ACCESS_KEY`      | Secret | Yes      | R2 secret key (passed to Lambda)                         |
+| `R2_ENDPOINT`               | Var    | Yes      | R2 endpoint URL                                          |
 
-*Required when `ENCODING_SERVICE_PROVIDER` is set to `"aws"`
+\*Required when `ENCODING_SERVICE_PROVIDER` is set to `"aws"`
 
 ## Troubleshooting
 
 ### Issue: Workflow fails with "Invalid encoding service configuration"
 
 **Solution**: Ensure AWS_LAMBDA_ENCODING_URL is set:
+
 ```bash
 wrangler secret put AWS_LAMBDA_ENCODING_URL
 # Paste the Lambda URL
@@ -165,6 +167,7 @@ wrangler secret put AWS_LAMBDA_ENCODING_URL
 ### Issue: Lambda returns 403 or authentication error
 
 **Solution**: Check R2 credentials are correct and have proper permissions:
+
 ```bash
 # Verify R2 credentials
 wrangler secret list
@@ -176,14 +179,16 @@ wrangler secret put R2_SECRET_ACCESS_KEY
 
 ### Issue: Encoding times out
 
-**Solution**: 
+**Solution**:
+
 1. Check Lambda timeout configuration (should be 15 minutes)
 2. Verify network connectivity between Lambda and R2
 3. Check CloudWatch logs for detailed error messages
 
 ### Issue: Lambda cold starts are slow
 
-**Solution**: 
+**Solution**:
+
 1. Consider enabling provisioned concurrency in CDK stack
 2. Or use AWS Lambda SnapStart (if using Java runtime)
 3. Current Node.js implementation typically has <1s cold start
@@ -215,6 +220,7 @@ wrangler deploy
 ### AWS Lambda Costs
 
 Based on typical podcast episode encoding (60 min audio):
+
 - Memory: 10GB
 - Duration: ~30-60 seconds
 - Cost per encoding: ~$0.01-0.02

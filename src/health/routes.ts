@@ -1,4 +1,5 @@
 import { OpenAPIHono, createRoute, z } from "@hono/zod-openapi";
+import type { Env } from "hono";
 import { getDatabase, type Database } from "../database/client";
 import { sql } from "drizzle-orm";
 import type { D1Database } from "@cloudflare/workers-types";
@@ -56,14 +57,17 @@ const readinessRoute = createRoute({
   },
 });
 
-export function registerHealthRoutes(app: OpenAPIHono, database?: D1Database) {
+export function registerHealthRoutes<T extends Env = any>(
+  app: OpenAPIHono<T>,
+  database?: D1Database
+) {
   const db = getDatabase(database);
 
   // --------------------------------
   // GET /healthz
   // --------------------------------
-  app.openapi(livenessRoute, async (c) => {
-    return c.json({
+  app.openapi(livenessRoute, async (ctx) => {
+    return ctx.json({
       status: "healthy",
       timestamp: new Date().toISOString(),
       service: "podcast-service",
@@ -74,19 +78,19 @@ export function registerHealthRoutes(app: OpenAPIHono, database?: D1Database) {
   // --------------------------------
   // GET /readyz
   // --------------------------------
-  app.openapi(readinessRoute, async (c) => {
+  app.openapi(readinessRoute, async (ctx) => {
     try {
       // Check database connection
       await db.run(sql`SELECT 1`);
 
-      return c.json({
+      return ctx.json({
         status: "healthy",
         timestamp: new Date().toISOString(),
         service: "podcast-service",
         version: "1.0.0",
       });
     } catch (error) {
-      return c.json(
+      return ctx.json(
         {
           status: "unhealthy",
           timestamp: new Date().toISOString(),

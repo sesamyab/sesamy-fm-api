@@ -81,23 +81,6 @@ The encoding container:
 
 ## Usage Examples
 
-### Test Encoding (No Authentication Required)
-
-```bash
-# Test with default settings
-curl -X POST https://your-service.workers.dev/tasks/test-encode \
-  -H "Content-Type: application/json" \
-  -d '{}'
-
-# Test with custom settings
-curl -X POST https://your-service.workers.dev/tasks/test-encode \
-  -H "Content-Type: application/json" \
-  -d '{
-    "outputFormat": "mp3",
-    "bitrate": 192
-  }'
-```
-
 ### Direct Container Access (Requires Authentication)
 
 ```bash

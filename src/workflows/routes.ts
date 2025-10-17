@@ -1,7 +1,6 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
-import { authMiddleware } from "../auth/middleware";
 
 // Cloudflare Workers types (for environments where they're not globally available)
 declare global {
@@ -184,7 +183,7 @@ const healthRoute = createRoute({
       },
     },
   },
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: ["workflows:read"] }],
 });
 
 const listInstancesRoute = createRoute({
@@ -217,7 +216,7 @@ const listInstancesRoute = createRoute({
       },
     },
   },
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: ["workflows:read"] }],
 });
 
 const statsRoute = createRoute({
@@ -251,7 +250,7 @@ const statsRoute = createRoute({
       },
     },
   },
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: ["workflows:read"] }],
 });
 
 const getInstanceRoute = createRoute({
@@ -281,7 +280,7 @@ const getInstanceRoute = createRoute({
       description: "Workflow not found",
     },
   },
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: ["workflows:read"] }],
 });
 
 const audioProcessingRoute = createRoute({
@@ -321,22 +320,21 @@ const audioProcessingRoute = createRoute({
       description: "Invalid request body",
     },
   },
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: ["workflows:write"] }],
 });
 
 export function createWorkflowRoutes() {
   const app = new OpenAPIHono<{ Bindings: Env }>();
 
-  // Apply auth middleware to all routes
-  app.use("*", authMiddleware);
+  // Auth middleware is applied globally in app.ts
 
   // --------------------------------
   // GET /workflows/health
   // --------------------------------
-  app.openapi(healthRoute, async (c) => {
-    const env = c.env;
+  app.openapi(healthRoute, async (ctx) => {
+    const env = ctx.env;
 
-    return c.json({
+    return ctx.json({
       success: true,
       status: "healthy",
       workflows: [
@@ -361,10 +359,10 @@ export function createWorkflowRoutes() {
   // --------------------------------
   // GET /workflows/instances
   // --------------------------------
-  app.openapi(listInstancesRoute, async (c) => {
+  app.openapi(listInstancesRoute, async (ctx) => {
     try {
-      const query = c.req.valid("query");
-      const env = c.env;
+      const query = ctx.req.valid("query");
+      const env = ctx.env;
 
       let allWorkflows: any[] = [];
 
@@ -416,7 +414,7 @@ export function createWorkflowRoutes() {
         query.offset + query.limit
       );
 
-      return c.json({
+      return ctx.json({
         success: true,
         workflows: paginatedWorkflows,
         pagination: {
@@ -442,7 +440,7 @@ export function createWorkflowRoutes() {
   // --------------------------------
   // GET /workflows/instances/stats
   // --------------------------------
-  app.openapi(statsRoute, async (c) => {
+  app.openapi(statsRoute, async (ctx) => {
     try {
       // Placeholder implementation
       const stats = {
@@ -458,7 +456,7 @@ export function createWorkflowRoutes() {
         averageDuration: undefined as number | undefined,
       };
 
-      return c.json({
+      return ctx.json({
         success: true,
         stats,
         generatedAt: new Date().toISOString(),
@@ -474,9 +472,9 @@ export function createWorkflowRoutes() {
   // --------------------------------
   // GET /workflows/instances/{workflowId}
   // --------------------------------
-  app.openapi(getInstanceRoute, async (c) => {
+  app.openapi(getInstanceRoute, async (ctx) => {
     try {
-      const { workflowId } = c.req.valid("param");
+      const { workflowId } = ctx.req.valid("param");
 
       // Placeholder implementation - would query actual workflow storage
       const problem = {
@@ -484,7 +482,7 @@ export function createWorkflowRoutes() {
         title: "Not Found",
         status: 404,
         detail: "Workflow not found",
-        instance: c.req.path,
+        instance: ctx.req.path,
       };
       throw new HTTPException(404, { message: JSON.stringify(problem) });
     } catch (error) {
@@ -501,10 +499,10 @@ export function createWorkflowRoutes() {
   // --------------------------------
   // POST /workflows/audio-processing
   // --------------------------------
-  app.openapi(audioProcessingRoute, async (c) => {
+  app.openapi(audioProcessingRoute, async (ctx) => {
     try {
-      const env = c.env;
-      const body = c.req.valid("json");
+      const env = ctx.env;
+      const body = ctx.req.valid("json");
 
       const instanceId = crypto.randomUUID();
 
@@ -514,7 +512,7 @@ export function createWorkflowRoutes() {
         params: body,
       });
 
-      return c.json(
+      return ctx.json(
         {
           success: true,
           message: "Audio processing workflow started successfully",
@@ -540,7 +538,7 @@ export function createWorkflowRoutes() {
           title: "Bad Request",
           status: 400,
           detail: error.message,
-          instance: c.req.path,
+          instance: ctx.req.path,
         };
         throw new HTTPException(400, { message: JSON.stringify(problem) });
       }

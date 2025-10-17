@@ -36,6 +36,8 @@ interface CloudflareEnv {
   AUTH0_DOMAIN?: string;
   AUTH0_CLIENT_ID?: string;
   AUTH0_CLIENT_SECRET?: string;
+  // JWKS URL for JWT verification
+  JWKS_URL: string;
   // TTS configuration
   TTS_DEFAULT_MODEL?: string;
   TTS_DEFAULT_VOICE?: string;
@@ -59,8 +61,7 @@ export default {
       env.AUTH0_DOMAIN,
       env.AUTH0_CLIENT_ID,
       env.AUTH0_CLIENT_SECRET,
-      env.TTS_GENERATION_WORKFLOW,
-      env.TRANSCRIPTION_WORKFLOW
+      env.TTS_GENERATION_WORKFLOW
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;

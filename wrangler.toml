@@ -18,6 +18,7 @@ USE_NOVA3_FEATURES = "true"
 # Auth0 Configuration
 AUTH0_DOMAIN = "auth2.sesamy.dev"
 AUTH0_CLIENT_ID = "sesamy-fm"
+JWKS_URL = "https://token.sesamy.dev/.well-known/jwks.json"
 
 
 # Secrets to be set with: wrangler secret put <name>

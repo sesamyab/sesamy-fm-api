@@ -26,8 +26,8 @@ export function createEncodingRoutes(
 
   // Skip if no encoding service is available
   if (!encodingService) {
-    app.get("/encoding", (c) => {
-      return c.json(
+    app.get("/encoding", (ctx) => {
+      return ctx.json(
         {
           status: "unavailable",
           service: "encoding-service",
@@ -41,8 +41,8 @@ export function createEncodingRoutes(
   }
 
   // Encoding service health check
-  app.get("/encoding", (c) => {
-    return c.json({
+  app.get("/encoding", (ctx) => {
+    return ctx.json({
       status: "ok",
       service: "encoding-service",
       type: awsLambdaUrl ? "aws-lambda" : "cloudflare-container",
@@ -58,13 +58,13 @@ export function createEncodingRoutes(
   });
 
   // Encode audio endpoint
-  app.post("/encoding/encode", async (c) => {
+  app.post("/encoding/encode", async (ctx) => {
     try {
-      const body = await c.req.json();
+      const body = await ctx.req.json();
       const result = await encodingService.encode(body);
-      return c.json(result);
+      return ctx.json(result);
     } catch (error) {
-      return c.json(
+      return ctx.json(
         {
           success: false,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -76,13 +76,13 @@ export function createEncodingRoutes(
   });
 
   // Get audio metadata endpoint
-  app.post("/encoding/metadata", async (c) => {
+  app.post("/encoding/metadata", async (ctx) => {
     try {
-      const body = await c.req.json();
+      const body = await ctx.req.json();
       const result = await encodingService.getMetadata(body);
-      return c.json(result);
+      return ctx.json(result);
     } catch (error) {
-      return c.json(
+      return ctx.json(
         {
           success: false,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -93,14 +93,14 @@ export function createEncodingRoutes(
   });
 
   // Test encoding endpoint
-  app.post("/encoding/test", async (c) => {
+  app.post("/encoding/test", async (ctx) => {
     try {
-      const body = await c.req.json();
+      const body = await ctx.req.json();
       const { outputFormat = "mp3", bitrate = 128 } = body;
       const result = await encodingService.testEncoding(outputFormat, bitrate);
-      return c.json(result);
+      return ctx.json(result);
     } catch (error) {
-      return c.json(
+      return ctx.json(
         {
           success: false,
           error: error instanceof Error ? error.message : "Unknown error",
@@ -112,12 +112,12 @@ export function createEncodingRoutes(
   });
 
   // Warmup endpoint
-  app.post("/encoding/warmup", async (c) => {
+  app.post("/encoding/warmup", async (ctx) => {
     try {
       const result = await encodingService.warmup();
-      return c.json(result);
+      return ctx.json(result);
     } catch (error) {
-      return c.json(
+      return ctx.json(
         {
           success: false,
           error: error instanceof Error ? error.message : "Unknown error",

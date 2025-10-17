@@ -4,9 +4,9 @@ import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
 import { AudioUploadSchema, AudioParamsSchema } from "./schemas";
 import { AudioService } from "./service";
-import { hasPermissions, hasScopes } from "../auth/middleware";
-import { JWTPayload } from "../auth/types";
 import { NotFoundError } from "../common/errors";
+import type { AppContext } from "../auth/types";
+import { getOrgId } from "../auth/helpers";
 
 // Upload audio route
 const uploadAudioRoute = createRoute({
@@ -50,7 +50,7 @@ const uploadAudioRoute = createRoute({
       description: "Episode not found",
     },
   },
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: ["podcast:write"] }],
 });
 
 // Get audio metadata route
@@ -76,37 +76,22 @@ const getAudioRoute = createRoute({
       description: "Audio or episode not found",
     },
   },
-  security: [{ Bearer: [] }],
+  security: [{ Bearer: ["podcast:read"] }],
 });
 
 export function registerAudioRoutes(
-  app: OpenAPIHono,
+  app: OpenAPIHono<AppContext>,
   audioService: AudioService
 ) {
   // --------------------------------
   // POST /shows/{show_id}/episodes/{episode_id}/audio
   // --------------------------------
-  app.openapi(uploadAudioRoute, async (c) => {
-    // Check auth
-    const payload = c.get("jwtPayload") as JWTPayload;
-    const hasWritePermission = hasPermissions(payload, ["podcast:write"]);
-    const hasWriteScope = hasScopes(payload, ["podcast.write"]);
-    if (!hasWritePermission && !hasWriteScope) {
-      const problem = {
-        type: "forbidden",
-        title: "Forbidden",
-        status: 403,
-        detail: "Required permissions: podcast:write or scope: podcast.write",
-        instance: c.req.path,
-      };
-      throw new HTTPException(403, { message: JSON.stringify(problem) });
-    }
-
-    const { show_id, episode_id } = c.req.valid("param");
+  app.openapi(uploadAudioRoute, async (ctx) => {
+    const { show_id, episode_id } = ctx.req.valid("param");
 
     try {
       // Parse multipart form data
-      const formData = await c.req.formData();
+      const formData = await ctx.req.formData();
       const audioFile = formData.get("audio") as File | null;
 
       if (!audioFile) {
@@ -115,7 +100,7 @@ export function registerAudioRoutes(
           title: "Validation Error",
           status: 400,
           detail: "Audio file is required",
-          instance: c.req.path,
+          instance: ctx.req.path,
         };
         throw new HTTPException(400, { message: JSON.stringify(problem) });
       }
@@ -171,11 +156,11 @@ export function registerAudioRoutes(
           try {
             const { TaskService } = await import("../tasks/service.js");
             const database = audioService["database"];
-            const organizationId = payload.org_id;
+            const organizationId = getOrgId(ctx);
 
             // Get TTS workflow binding from context if available
             const ttsWorkflow = (
-              c.env as { TTS_GENERATION_WORKFLOW?: Workflow }
+              ctx.env as { TTS_GENERATION_WORKFLOW?: Workflow }
             )?.TTS_GENERATION_WORKFLOW;
 
             const taskService = new TaskService(
@@ -204,7 +189,7 @@ export function registerAudioRoutes(
           }
 
           // Return a success response indicating TTS is starting
-          return c.json(
+          return ctx.json(
             {
               id: scriptId,
               episodeId: episode_id,
@@ -236,7 +221,7 @@ export function registerAudioRoutes(
           episode_id,
           fileData
         );
-        return c.json(upload, 201);
+        return ctx.json(upload, 201);
       }
     } catch (error) {
       if (error instanceof NotFoundError) {
@@ -245,7 +230,7 @@ export function registerAudioRoutes(
           title: "Not Found",
           status: 404,
           detail: "Episode not found",
-          instance: c.req.path,
+          instance: ctx.req.path,
         };
         throw new HTTPException(404, { message: JSON.stringify(problem) });
       }
@@ -261,23 +246,8 @@ export function registerAudioRoutes(
   // --------------------------------
   // GET /shows/{show_id}/episodes/{episode_id}/audio
   // --------------------------------
-  app.openapi(getAudioRoute, async (c) => {
-    // Check auth
-    const payload = c.get("jwtPayload") as JWTPayload;
-    const hasReadPermission = hasPermissions(payload, ["podcast:read"]);
-    const hasReadScope = hasScopes(payload, ["podcast.read"]);
-    if (!hasReadPermission && !hasReadScope) {
-      const problem = {
-        type: "forbidden",
-        title: "Forbidden",
-        status: 403,
-        detail: "Required permissions: podcast:read or scope: podcast.read",
-        instance: c.req.path,
-      };
-      throw new HTTPException(403, { message: JSON.stringify(problem) });
-    }
-
-    const { show_id, episode_id } = c.req.valid("param");
+  app.openapi(getAudioRoute, async (ctx) => {
+    const { show_id, episode_id } = ctx.req.valid("param");
     const audio = await audioService.getAudioMetadata(show_id, episode_id);
 
     if (!audio) {
@@ -286,20 +256,20 @@ export function registerAudioRoutes(
         title: "Not Found",
         status: 404,
         detail: "Audio not found",
-        instance: c.req.path,
+        instance: ctx.req.path,
       };
       throw new HTTPException(404, { message: JSON.stringify(problem) });
     }
 
-    return c.json(audio);
+    return ctx.json(audio);
   });
 
   // TODO: Implement signed audio file serving once R2Object API is clarified
   // For now, signed URLs will point to placeholder URLs until R2Object streaming is resolved
   /*
   // Serve signed audio files - no OpenAPI spec needed as this is internal
-  app.get("/audio/signed/:token", async (c) => {
-    const token = c.req.param("token");
+  app.get("/audio/signed/:token", async (ctx) => {
+    const token = ctx.req.param("token");
     
     if (!token) {
       throw new HTTPException(400, { message: "Missing token" });

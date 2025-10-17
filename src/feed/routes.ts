@@ -1,4 +1,5 @@
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
+import type { Env } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { ShowService } from "../shows/service";
@@ -36,16 +37,16 @@ const getShowFeedRoute = createRoute({
   },
 });
 
-export function registerFeedRoutes(
-  app: OpenAPIHono,
+export function registerFeedRoutes<T extends Env = any>(
+  app: OpenAPIHono<T>,
   showService: ShowService,
   episodeRepository: EpisodeRepository
 ) {
   // --------------------------------
   // GET /feeds/{show_id}
   // --------------------------------
-  app.openapi(getShowFeedRoute, async (c) => {
-    const { show_id } = c.req.valid("param");
+  app.openapi(getShowFeedRoute, async (ctx) => {
+    const { show_id } = ctx.req.valid("param");
     const show = await showService.getShowByIdPublic(show_id);
 
     if (!show) {
@@ -54,7 +55,7 @@ export function registerFeedRoutes(
         title: "Not Found",
         status: 404,
         detail: "Show not found",
-        instance: c.req.path,
+        instance: ctx.req.path,
       };
       throw new HTTPException(404, { message: JSON.stringify(problem) });
     }
@@ -71,7 +72,7 @@ export function registerFeedRoutes(
       episodes,
     });
 
-    c.header("Content-Type", "application/rss+xml");
-    return c.text(rssFeed);
+    ctx.header("Content-Type", "application/rss+xml");
+    return ctx.text(rssFeed);
   });
 }
