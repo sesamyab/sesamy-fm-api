@@ -12,36 +12,8 @@ import { AudioProcessingWorkflow } from "./workflows/audio-processing";
 import { ImportShowWorkflow } from "./workflows/import-show";
 import { TtsGenerationWorkflow } from "./workflows/tts-generation";
 import { TranscriptionWorkflow } from "./workflows/transcription";
-
-// Interface for Cloudflare Worker environment
-interface CloudflareEnv {
-  DB: D1Database;
-  BUCKET: R2Bucket;
-  AI: Ai;
-  JWT_SECRET?: string;
-  NODE_ENV?: string;
-  R2_ACCESS_KEY_ID?: string;
-  R2_SECRET_ACCESS_KEY?: string;
-  R2_ENDPOINT?: string; // Full R2 endpoint URL with account ID
-  ENCODING_CONTAINER: DurableObjectNamespace;
-  AUDIO_PROCESSING_WORKFLOW?: Workflow;
-  IMPORT_SHOW_WORKFLOW?: Workflow;
-  TTS_GENERATION_WORKFLOW?: Workflow;
-  TRANSCRIPTION_WORKFLOW?: Workflow;
-  // AWS Lambda encoding service configuration (optional)
-  AWS_LAMBDA_ENCODING_URL?: string;
-  AWS_LAMBDA_API_KEY?: string;
-  ENCODING_SERVICE_PROVIDER?: string;
-  // Auth0 configuration
-  AUTH0_DOMAIN?: string;
-  AUTH0_CLIENT_ID?: string;
-  AUTH0_CLIENT_SECRET?: string;
-  // JWKS URL for JWT verification
-  JWKS_URL: string;
-  // TTS configuration
-  TTS_DEFAULT_MODEL?: string;
-  TTS_DEFAULT_VOICE?: string;
-}
+import { EncodingWorkflow } from "./workflows/encoding";
+import type { CloudflareEnv } from "./types/env";
 
 export default {
   async fetch(
@@ -61,7 +33,8 @@ export default {
       env.AUTH0_DOMAIN,
       env.AUTH0_CLIENT_ID,
       env.AUTH0_CLIENT_SECRET,
-      env.TTS_GENERATION_WORKFLOW
+      env.TTS_GENERATION_WORKFLOW,
+      env.ENCODING_WORKFLOW
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;
@@ -107,11 +80,12 @@ export default {
   },
 };
 
-// Export the EncodingContainer, AudioProcessingWorkflow, ImportShowWorkflow, TtsGenerationWorkflow, and TranscriptionWorkflow for Cloudflare Workers
+// Export the EncodingContainer, AudioProcessingWorkflow, ImportShowWorkflow, TtsGenerationWorkflow, TranscriptionWorkflow, and EncodingWorkflow for Cloudflare Workers
 export {
   EncodingContainer,
   AudioProcessingWorkflow,
   ImportShowWorkflow,
   TtsGenerationWorkflow,
   TranscriptionWorkflow,
+  EncodingWorkflow,
 };

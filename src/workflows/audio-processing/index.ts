@@ -12,17 +12,14 @@ import { InitializeWorkflowStep } from "./initialize-workflow";
 import { encodeAudioForTTS } from "./tts-encode";
 import { WorkflowProgressReporter } from "./progress-reporter";
 import { audioChunking } from "./audio-chunking";
-// import { enhanceTranscript } from "./enhance-transcript";
-// import { audioEncoding } from "./audio-encoding";
-// import { updateEpisodeEncodings } from "./update-episode-encodings";
 import { cleanupResources } from "./cleanup-resources";
-// import { finalizeProcessing } from "./finalize-processing";
+import { finalizeProcessing } from "./finalize-processing";
 
 export class AudioProcessingWorkflow extends WorkflowEntrypoint<
   Env,
   AudioProcessingParams
 > {
-  private readonly totalSteps = 4; // Updated: only encoding steps now
+  private readonly totalSteps = 4; // Updated: initialize, encode-tts, chunk, cleanup
 
   private async updateWorkflowStatus(
     taskId?: string,
@@ -205,7 +202,6 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
           0,
           "1/4 Initializing workflow"
         );
-
         const initStep = new InitializeWorkflowStep(this.env);
         const result = await initStep.execute(validatedParams);
 
@@ -294,7 +290,7 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
         }
       );
 
-      // Step 4: Cleanup temporary files from R2 (optional)
+      // Step 4: Cleanup temporary files from R2
       currentStep = "cleanup-resources";
       await step.do(
         "cleanup-resources",
@@ -315,8 +311,12 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
         }
       );
 
+      // Step 7: Finalize processing (note: no transcription in this workflow)
+      // Transcription is handled separately by the TranscriptionWorkflow
+      // For now, we'll skip finalization since we don't have transcribedChunks
+
       // Prepare final result
-      const encodingResult = {
+      const finalResult = {
         success: true,
         episodeId: workflowState.episodeId,
         workflowId: workflowState.workflowId,
@@ -337,35 +337,35 @@ export class AudioProcessingWorkflow extends WorkflowEntrypoint<
 
           await workflowService.completeWorkflow(
             validatedParams.workflowId,
-            encodingResult,
+            finalResult,
             undefined // actualDuration - could be calculated if needed
           );
 
           console.log(
-            `Audio encoding workflow completed successfully for episode ${validatedParams.episodeId}`
+            `Audio processing workflow completed successfully for episode ${validatedParams.episodeId}`
           );
         } else {
           // Fallback to direct task update if workflowId is not available
           await this.updateWorkflowStatus(
             validatedParams.taskId,
             "done",
-            "Audio encoding completed successfully"
+            "Audio processing completed successfully"
           );
           console.log(
-            `Audio encoding workflow completed successfully for episode ${validatedParams.episodeId} (direct task update)`
+            `Audio processing workflow completed successfully for episode ${validatedParams.episodeId} (direct task update)`
           );
         }
 
-        // Update task result with encoding details
+        // Update task result with full processing details
         if (validatedParams.taskId) {
-          await this.updateTaskResult(validatedParams.taskId, encodingResult);
+          await this.updateTaskResult(validatedParams.taskId, finalResult);
         }
       } catch (error) {
         console.error("Failed to set final workflow status:", error);
         // Don't throw here as the workflow is actually completed
       }
 
-      return encodingResult;
+      return finalResult;
     } catch (error: any) {
       // Handle workflow error with current step information
       console.error(`Workflow failed at step: ${currentStep}`, error);

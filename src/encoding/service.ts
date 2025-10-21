@@ -13,6 +13,7 @@ export interface EncodingServiceConfig {
 export interface EncodingRequest {
   audioUrl: string;
   outputUrl: string;
+  metadataUrl?: string; // URL to upload comprehensive metadata JSON
   outputFormat?: string;
   bitrate?: number;
   r2AccessKeyId?: string;

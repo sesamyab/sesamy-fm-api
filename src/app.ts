@@ -44,7 +44,8 @@ export function createApp(
   auth0Domain?: string,
   auth0ClientId?: string,
   auth0ClientSecret?: string,
-  ttsGenerationWorkflow?: Workflow
+  ttsGenerationWorkflow?: Workflow,
+  encodingWorkflow?: Workflow
 ) {
   const app = new OpenAPIHono<AppContext>();
 
@@ -55,7 +56,13 @@ export function createApp(
   const showService = new ShowService(showRepository, eventPublisher);
 
   const episodeRepository = new EpisodeRepository(database);
-  const taskService = new TaskService(database, audioProcessingWorkflow);
+  const taskService = new TaskService(
+    database,
+    audioProcessingWorkflow,
+    importShowWorkflow,
+    ttsGenerationWorkflow,
+    encodingWorkflow
+  );
   const episodeService = new EpisodeService(
     episodeRepository,
     eventPublisher,
@@ -69,7 +76,8 @@ export function createApp(
     r2AccessKeyId,
     r2SecretAccessKey,
     r2Endpoint,
-    audioProcessingWorkflow
+    audioProcessingWorkflow,
+    encodingWorkflow
   );
 
   const imageService =

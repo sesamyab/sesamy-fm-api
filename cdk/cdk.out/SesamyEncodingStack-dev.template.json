@@ -69,7 +69,10 @@
       "Fn::Join": [
        "",
        [
-        "610396205502.dkr.ecr.eu-west-1.",
+        {
+         "Ref": "AWS::AccountId"
+        },
+        ".dkr.ecr.us-east-1.",
         {
          "Ref": "AWS::URLSuffix"
         },
@@ -163,7 +166,11 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:eu-west-1:610396205502:",
+       "arn:aws:execute-api:us-east-1:",
+       {
+        "Ref": "AWS::AccountId"
+       },
+       ":",
        {
         "Ref": "EncodingApi29D606F9"
        },
@@ -241,7 +248,7 @@
     "aws:cdk:path": "SesamyEncodingStack-dev/EncodingApi/Account"
    }
   },
-  "EncodingApiDeploymentD5703D1404ffca8d44a5911eb5f65b72530c760d": {
+  "EncodingApiDeploymentD5703D144eaf0dc85904189be38fd270745b08e0": {
    "Type": "AWS::ApiGateway::Deployment",
    "Properties": {
     "Description": "FFmpeg Encoding Service API - dev",
@@ -264,7 +271,7 @@
    "Type": "AWS::ApiGateway::Stage",
    "Properties": {
     "DeploymentId": {
-     "Ref": "EncodingApiDeploymentD5703D1404ffca8d44a5911eb5f65b72530c760d"
+     "Ref": "EncodingApiDeploymentD5703D144eaf0dc85904189be38fd270745b08e0"
     },
     "MethodSettings": [
      {
@@ -408,7 +415,11 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:eu-west-1:610396205502:",
+       "arn:aws:execute-api:us-east-1:",
+       {
+        "Ref": "AWS::AccountId"
+       },
+       ":",
        {
         "Ref": "EncodingApi29D606F9"
        },
@@ -440,7 +451,11 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:eu-west-1:610396205502:",
+       "arn:aws:execute-api:us-east-1:",
+       {
+        "Ref": "AWS::AccountId"
+       },
+       ":",
        {
         "Ref": "EncodingApi29D606F9"
        },
@@ -468,7 +483,7 @@
       "Fn::Join": [
        "",
        [
-        "arn:aws:apigateway:eu-west-1:lambda:path/2015-03-31/functions/",
+        "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/",
         {
          "Fn::GetAtt": [
           "EncodingFunctionABC530E0",
@@ -506,7 +521,11 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:eu-west-1:610396205502:",
+       "arn:aws:execute-api:us-east-1:",
+       {
+        "Ref": "AWS::AccountId"
+       },
+       ":",
        {
         "Ref": "EncodingApi29D606F9"
        },
@@ -538,7 +557,11 @@
      "Fn::Join": [
       "",
       [
-       "arn:aws:execute-api:eu-west-1:610396205502:",
+       "arn:aws:execute-api:us-east-1:",
+       {
+        "Ref": "AWS::AccountId"
+       },
+       ":",
        {
         "Ref": "EncodingApi29D606F9"
        },
@@ -566,7 +589,7 @@
       "Fn::Join": [
        "",
        [
-        "arn:aws:apigateway:eu-west-1:lambda:path/2015-03-31/functions/",
+        "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/",
         {
          "Fn::GetAtt": [
           "EncodingFunctionABC530E0",
@@ -627,7 +650,7 @@
       ]
      ]
     },
-    "DashboardName": "sesamy-encoding-dev-eu-west-1"
+    "DashboardName": "sesamy-encoding-dev-us-east-1"
    },
    "Metadata": {
     "aws:cdk:path": "SesamyEncodingStack-dev/EncodingDashboard/Resource"
@@ -636,7 +659,7 @@
   "CDKMetadata": {
    "Type": "AWS::CDK::Metadata",
    "Properties": {
-    "Analytics": "v2:deflate64:H4sIAAAAAAAA/1WPTU7DMBCFz9K9M4TCBQoV3YBAqVijiTMkbh1PZI+JIit3R0mTQlfvm/c0f1u4z3PIN9iHTFfnzJoS0lFQnxX24SuR9lBQx8EI++EJAymDLaSCLannbzfpqCzXAdIr1wfPsZv8lUdlsS0rhPQSnRbDbkqvvMKnt5O/yAf51oRg2I0KO1OjUI8DpIKC7Doz7/3DndYcnag9dZaHlpxM7r/qKFjPx16goMDRa5qfeSNpuJrChdZ0WTLzqLTlWPUouoG0x9CUjH7uuhbjeNP6HqWLcjvEcUVwCnc/2wd4hHxzCsZkPjoxLUFx0V/Bs2HekAEAAA=="
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/1WPzU7DMBCEn6V3Z0lz41io4FIESsUZbZwldet4I3tNFFl5d5Q0KfQ0385o/wrY5jnkG+xDputLZk0F6SioLwr78JVIeyip42CE/fCEgZTBFlLJltTzt5t0VJabAOnAzavn2E3+yqOy2FY1QnqJTothN6U3XuHT28lf5IN8a0Iw7EaFnWlQqMcBUklBdp2Z9/7hTmuOTtSeOstDS04m9191FGzmY69QUuDoNc3PvJGcuJ7ChdZ0WTLzqLTlWPco+gRpj+FUMfq561aM413re5Quyv0QxzXBOTz8FAVsHyHfnIMxmY9OTEtQXvUX920HFZEBAAA="
    },
    "Metadata": {
     "aws:cdk:path": "SesamyEncodingStack-dev/CDKMetadata/Default"
@@ -653,7 +676,7 @@
       {
        "Ref": "EncodingApi29D606F9"
       },
-      ".execute-api.eu-west-1.",
+      ".execute-api.us-east-1.",
       {
        "Ref": "AWS::URLSuffix"
       },
@@ -672,7 +695,10 @@
     "Fn::Join": [
      "",
      [
-      "610396205502.dkr.ecr.eu-west-1.",
+      {
+       "Ref": "AWS::AccountId"
+      },
+      ".dkr.ecr.us-east-1.",
       {
        "Ref": "AWS::URLSuffix"
       },
@@ -715,7 +741,7 @@
       {
        "Ref": "EncodingApi29D606F9"
       },
-      ".execute-api.eu-west-1.",
+      ".execute-api.us-east-1.",
       {
        "Ref": "AWS::URLSuffix"
       },
@@ -737,7 +763,7 @@
     "Fn::Join": [
      "",
      [
-      "https://eu-west-1.console.aws.amazon.com/cloudwatch/home?region=eu-west-1#dashboards:name=",
+      "https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=",
       {
        "Ref": "EncodingDashboard6916285A"
       }

@@ -36,18 +36,15 @@ export class R2PreSignedUrlGenerator {
     contentType?: string,
     forceSignature: boolean = false // Force AWS signature even with custom domain
   ): Promise<string> {
-    // For CORS-sensitive requests, always use R2 domain instead of custom domain
-    // R2 automatically handles CORS for signed URLs on .r2.cloudflarestorage.com
-    const baseUrl =
-      this.customDomain && !forceSignature
-        ? `${this.customDomain}/${key}`
-        : `https://${bucketName}.r2.cloudflarestorage.com/${key}`;
-
     // For GET requests with custom domain, we can return direct URLs (no signature needed)
     // unless forceSignature is true (needed for CORS-sensitive downloads like markdown files)
     if (this.customDomain && method === "GET" && !forceSignature) {
-      return baseUrl;
+      return `${this.customDomain}/${key}`;
     }
+
+    // For PUT/signed requests, always use R2 domain for proper signature generation
+    // R2 automatically handles CORS for signed URLs on .r2.cloudflarestorage.com
+    const baseUrl = `https://${bucketName}.r2.cloudflarestorage.com/${key}`;
 
     // For PUT requests, we need signatures regardless of domain
     const headers: Record<string, string> = {};

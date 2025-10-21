@@ -1,1 +1,10 @@
-{}
+{
+  "SesamyEncodingStack-dev": {
+    "ApiGatewayUrl": "https://5j9e18yljk.execute-api.us-east-1.amazonaws.com/dev/",
+    "EncodingApiEndpoint0B6955A5": "https://5j9e18yljk.execute-api.us-east-1.amazonaws.com/dev/",
+    "LambdaFunctionUrl": "https://c6bf5it5y3cxvjdjret4wroeli0neapt.lambda-url.us-east-1.on.aws/",
+    "LambdaFunctionName": "sesamy-encoding-dev",
+    "ECRRepositoryUri": "610396205502.dkr.ecr.us-east-1.amazonaws.com/sesamy-encoding-dev",
+    "DashboardUrl": "https://us-east-1.console.aws.amazon.com/cloudwatch/home?region=us-east-1#dashboards:name=sesamy-encoding-dev-us-east-1"
+  }
+}

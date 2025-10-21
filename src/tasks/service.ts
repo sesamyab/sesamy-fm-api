@@ -3,13 +3,18 @@ import { WorkflowService } from "../workflows/service.js";
 import type { Task } from "../database/schema.js";
 import { Workflow } from "@cloudflare/workers-types";
 
-export type TaskType = "audio_processing" | "import_show" | "tts_generation";
+export type TaskType =
+  | "audio_processing"
+  | "import_show"
+  | "tts_generation"
+  | "audio_encoding";
 
 // Map task types to human-readable names
 const TASK_TYPE_NAMES: Record<TaskType, string> = {
   audio_processing: "Audio Processing",
   import_show: "Import Show",
   tts_generation: "TTS Generation",
+  audio_encoding: "Audio Encoding",
 };
 
 export interface TaskPayload {
@@ -26,20 +31,23 @@ export class TaskService {
   private audioProcessingWorkflow?: Workflow;
   private importShowWorkflow?: Workflow;
   private ttsGenerationWorkflow?: Workflow;
+  private encodingWorkflow?: Workflow;
 
   constructor(
     database?: D1Database,
     audioProcessingWorkflow?: Workflow,
     importShowWorkflow?: Workflow,
-    ttsGenerationWorkflow?: Workflow
+    ttsGenerationWorkflow?: Workflow,
+    encodingWorkflow?: Workflow
   ) {
     this.repository = new TaskRepository(database);
     this.workflowService = new WorkflowService(database);
     this.audioProcessingWorkflow = audioProcessingWorkflow;
     this.importShowWorkflow = importShowWorkflow;
     this.ttsGenerationWorkflow = ttsGenerationWorkflow;
+    this.encodingWorkflow = encodingWorkflow;
     console.log(
-      `TaskService initialized with workflows: audio=${!!audioProcessingWorkflow}, import=${!!importShowWorkflow}, tts=${!!ttsGenerationWorkflow}`
+      `TaskService initialized with workflows: audio=${!!audioProcessingWorkflow}, import=${!!importShowWorkflow}, tts=${!!ttsGenerationWorkflow}, encoding=${!!encodingWorkflow}`
     );
   }
 
@@ -71,6 +79,9 @@ export class TaskService {
       } else if (type === "tts_generation" && payload) {
         console.log(`Creating workflow for tts_generation task ${task.id}`);
         await this.handleTtsGeneration({ ...payload, taskId: task.id });
+      } else if (type === "audio_encoding" && payload) {
+        console.log(`Creating workflow for audio_encoding task ${task.id}`);
+        await this.handleAudioEncoding({ ...payload, taskId: task.id });
       } else {
         console.log(`Task ${task.id} created, will be processed in batch`);
       }
@@ -188,6 +199,75 @@ export class TaskService {
       }
     }
     return await this.repository.updateStatus(taskId, status, updates);
+  }
+
+  // Method to cancel a task and its workflow
+  async cancelTask(taskId: number, organizationId?: string): Promise<Task> {
+    console.log(`Canceling task ${taskId}`);
+
+    // Get the task
+    const task = await this.getTask(taskId, organizationId);
+    if (!task) {
+      throw new Error("Task not found");
+    }
+
+    // Check if task can be canceled
+    if (task.status === "done" || task.status === "canceled") {
+      throw new Error(`Task is already ${task.status} and cannot be canceled`);
+    }
+
+    // Try to get workflow instance ID from task result
+    let workflowInstanceId: string | undefined;
+    try {
+      if (task.result) {
+        const result = JSON.parse(task.result);
+        workflowInstanceId = result.workflowInstanceId;
+      }
+    } catch (error) {
+      console.warn("Failed to parse task result for workflow instance ID");
+    }
+
+    // If we have a workflow instance, try to get its status and cancel if running
+    if (workflowInstanceId) {
+      try {
+        const workflow = await this.workflowService.getWorkflowByInstanceId(
+          workflowInstanceId
+        );
+
+        if (
+          workflow &&
+          workflow.status !== "completed" &&
+          workflow.status !== "failed" &&
+          workflow.status !== "cancelled"
+        ) {
+          console.log(
+            `Workflow ${workflowInstanceId} is ${workflow.status}, attempting to terminate`
+          );
+          // Note: Cloudflare Workflows don't have a direct cancel API yet
+          // We mark it as canceled in our system, and the workflow should check task status periodically
+          await this.workflowService.updateWorkflowStatus(
+            workflow.id,
+            "cancelled"
+          );
+        }
+      } catch (error) {
+        console.warn(`Failed to cancel workflow ${workflowInstanceId}:`, error);
+        // Continue with task cancellation even if workflow cancellation fails
+      }
+    }
+
+    // Update task status to canceled
+    const updatedTask = await this.repository.update(taskId, {
+      status: "canceled",
+      error: "Task canceled by user",
+      updatedAt: new Date().toISOString(),
+    });
+
+    if (!updatedTask) {
+      throw new Error("Failed to update task status");
+    }
+
+    return updatedTask;
   }
 
   private async handleAudioProcessing(payload: TaskPayload): Promise<void> {
@@ -378,6 +458,64 @@ export class TaskService {
       }
     } catch (error) {
       console.error("Failed to create TTS generation workflow:", error);
+      throw error;
+    }
+  }
+
+  private async handleAudioEncoding(payload: TaskPayload): Promise<void> {
+    console.log(
+      `handleAudioEncoding called with workflow: ${!!this.encodingWorkflow}`
+    );
+    if (!this.encodingWorkflow) {
+      console.error("Audio encoding workflow is null/undefined");
+      throw new Error("Audio encoding workflow not available");
+    }
+
+    const { taskId, episodeId, audioR2Key } = payload;
+    if (!episodeId || !audioR2Key) {
+      throw new Error(
+        "Episode ID and audio R2 key are required for audio encoding"
+      );
+    }
+
+    console.log(
+      `Creating audio encoding workflow for episode ${episodeId} (task ${taskId})`
+    );
+
+    try {
+      // Update task status to "processing" (in progress) before starting workflow
+      if (taskId) {
+        await this.repository.updateStatus(taskId, "processing", {
+          startedAt: new Date().toISOString(),
+        });
+        console.log(`Task ${taskId} status updated to processing`);
+      }
+
+      // Create workflow through the workflow service
+      const { workflow, instanceId } =
+        await this.workflowService.createWorkflow(
+          taskId || 0,
+          "encoding",
+          {
+            ...payload,
+            workflowId: undefined, // Will be set by the workflow service
+          },
+          this.encodingWorkflow
+        );
+
+      console.log(
+        `Audio encoding workflow created: ${workflow.id} (instance: ${instanceId})`
+      );
+
+      // Update task with workflow information
+      if (taskId) {
+        await this.repository.update(taskId, {
+          workflowId: workflow.id,
+          workflowInstanceId: instanceId,
+        });
+      }
+    } catch (error) {
+      console.error("Failed to create audio encoding workflow:", error);
       throw error;
     }
   }

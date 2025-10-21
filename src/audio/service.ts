@@ -10,6 +10,7 @@ export class AudioService {
   private eventPublisher: EventPublisher;
   private episodeRepo: EpisodeRepository;
   private audioProcessingWorkflow?: Workflow;
+  private encodingWorkflow?: Workflow;
   private bucket: R2Bucket;
   private presignedUrlGenerator: R2PreSignedUrlGenerator | null = null;
   private database?: D1Database;
@@ -21,17 +22,19 @@ export class AudioService {
     r2AccessKeyId?: string,
     r2SecretAccessKey?: string,
     r2Endpoint?: string,
-    audioProcessingWorkflow?: Workflow
+    audioProcessingWorkflow?: Workflow,
+    encodingWorkflow?: Workflow
   ) {
     this.database = database;
     this.audioRepo = new AudioRepository(database);
     this.episodeRepo = new EpisodeRepository(database);
     this.eventPublisher = eventPublisher || new EventPublisher();
     this.audioProcessingWorkflow = audioProcessingWorkflow;
+    this.encodingWorkflow = encodingWorkflow;
     this.bucket = bucket as R2Bucket;
 
     console.log(
-      `AudioService initialized with workflow: ${!!audioProcessingWorkflow}`
+      `AudioService initialized with workflows: audioProcessing=${!!audioProcessingWorkflow}, encoding=${!!encodingWorkflow}`
     );
 
     // Initialize pre-signed URL generator if credentials are available
@@ -226,11 +229,15 @@ export class AudioService {
 
       // Create a TaskService instance with workflow support
       console.log(
-        `Creating TaskService with workflow: ${!!this.audioProcessingWorkflow}`
+        `Creating TaskService with workflows: audioProcessing=${!!this
+          .audioProcessingWorkflow}, encoding=${!!this.encodingWorkflow}`
       );
       const taskService = new TaskService(
         this.database,
-        this.audioProcessingWorkflow
+        this.audioProcessingWorkflow,
+        undefined, // importShowWorkflow
+        undefined, // ttsGenerationWorkflow
+        this.encodingWorkflow
       );
 
       // Create an audio_processing task with the required payload
@@ -248,6 +255,22 @@ export class AudioService {
 
       console.log(
         `Created audio processing task ${task.id} for episode ${episodeId}`
+      );
+
+      // Create an audio_encoding task for encoding the audio to podcast formats
+      const encodingTask = await taskService.createTask(
+        "audio_encoding",
+        {
+          episodeId,
+          audioR2Key, // Use R2 key instead of signed URL
+          encodingFormats: ["mp3_128"], // Use MP3 format with auto-adjusted bitrate based on mono/stereo
+          organizationId: episode.organizationId, // Include organizationId in payload
+        },
+        episode.organizationId
+      );
+
+      console.log(
+        `Created audio encoding task ${encodingTask.id} for episode ${episodeId}`
       );
 
       // Generate signed URL for event payload (events may need accessible URLs)

@@ -7,7 +7,13 @@ import type { AppContext } from "../auth/types";
 import { getOrgId } from "../auth/helpers";
 
 // Task status enum
-const TaskStatusSchema = z.enum(["pending", "processing", "done", "failed"]);
+const TaskStatusSchema = z.enum([
+  "pending",
+  "processing",
+  "done",
+  "failed",
+  "canceled",
+]);
 
 // Task type enum
 const TaskTypeSchema = z.enum(["audio_processing"]);
@@ -35,7 +41,13 @@ const CreateTaskSchema = z.object({
 
 // Query parameters for listing tasks
 const TaskQuerySchema = z.object({
-  status: TaskStatusSchema.optional(),
+  status: z
+    .string()
+    .optional()
+    .describe(
+      "Comma-separated list of statuses to filter by (e.g., 'pending,processing')"
+    ),
+  episodeId: z.string().optional().describe("Filter tasks by episode ID"),
   limit: z.coerce.number().min(1).max(100).optional().default(10),
   offset: z.coerce.number().min(0).optional().default(0),
   sortBy: z
@@ -121,7 +133,7 @@ export const createTaskRoutes = (database?: D1Database) => {
       tags: ["tasks"],
       summary: "List tasks",
       description:
-        "Get a list of tasks with optional status filtering and sorting. Default sort is by created_at in descending order (newest first).",
+        "Get a list of tasks with optional filtering by status (comma-separated: 'pending,processing'), episodeId, and sorting. Default sort is by created_at in descending order (newest first).",
       security: [{ Bearer: ["podcast:read"] }],
       request: {
         query: TaskQuerySchema,
@@ -144,14 +156,40 @@ export const createTaskRoutes = (database?: D1Database) => {
       const query = ctx.req.valid("query");
       const organizationId = getOrgId(ctx);
 
-      const tasks = await taskService.getTasks(
-        query.status,
+      // Parse status filter (comma-separated values)
+      const statusFilter = query.status
+        ? query.status.split(",").map((s) => s.trim())
+        : undefined;
+
+      let tasks = await taskService.getTasks(
+        undefined, // We'll filter status manually to support multiple values
         query.limit,
         query.offset,
         query.sortBy,
         query.sortOrder,
         organizationId
       );
+
+      // Apply status filter (supports multiple statuses)
+      if (statusFilter && statusFilter.length > 0) {
+        tasks = tasks.filter((task) => statusFilter.includes(task.status));
+      }
+
+      // Apply episodeId filter
+      if (query.episodeId) {
+        tasks = tasks.filter((task) => {
+          if (!task.payload) return false;
+          try {
+            const payload =
+              typeof task.payload === "string"
+                ? JSON.parse(task.payload)
+                : task.payload;
+            return payload.episodeId === query.episodeId;
+          } catch {
+            return false;
+          }
+        });
+      }
 
       return ctx.json(tasks.map(serializeTask));
     }
@@ -243,6 +281,60 @@ export const createTaskRoutes = (database?: D1Database) => {
 
       try {
         const task = await taskService.retryTask(task_id, organizationId);
+        return ctx.json(serializeTask(task));
+      } catch (error) {
+        if (error instanceof Error) {
+          if (error.message === "Task not found") {
+            throw new NotFoundError(`Task with ID ${task_id} not found`);
+          }
+          throw new HTTPException(400, { message: error.message });
+        }
+        throw new HTTPException(500, { message: "Internal server error" });
+      }
+    }
+  );
+
+  // --------------------------------
+  // POST /tasks/{task_id}/cancel
+  // --------------------------------
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/tasks/{task_id}/cancel",
+      tags: ["tasks"],
+      summary: "Cancel a task",
+      description:
+        "Cancel a running or pending task. If the task has an associated workflow, it will be terminated. Tasks that are already done or canceled cannot be canceled.",
+      security: [{ Bearer: ["podcast:write"] }],
+      request: {
+        params: TaskParamsSchema,
+      },
+      responses: {
+        200: {
+          description: "Task canceled successfully",
+          content: {
+            "application/json": {
+              schema: TaskSchema,
+            },
+          },
+        },
+        404: {
+          description: "Task not found",
+        },
+        401: {
+          description: "Unauthorized",
+        },
+        400: {
+          description: "Task cannot be canceled",
+        },
+      },
+    }),
+    async (ctx) => {
+      const { task_id } = ctx.req.valid("param");
+      const organizationId = getOrgId(ctx);
+
+      try {
+        const task = await taskService.cancelTask(task_id, organizationId);
         return ctx.json(serializeTask(task));
       } catch (error) {
         if (error instanceof Error) {

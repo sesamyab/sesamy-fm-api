@@ -62,6 +62,16 @@ export class WorkflowService {
           },
         });
         instanceId = instance.id;
+      } else if (workflowName === "encoding" && workflowBinding) {
+        const instance = await (workflowBinding as any).create({
+          id: workflowId,
+          params: {
+            ...params,
+            taskId: taskId.toString(), // Pass task ID to the workflow as string
+            workflowId, // Pass workflow ID to the workflow
+          },
+        });
+        instanceId = instance.id;
       } else {
         throw new Error(
           `Workflow ${workflowName} not available or binding not provided`
@@ -93,6 +103,8 @@ export class WorkflowService {
           ? "2-10 minutes"
           : workflowName === "tts-generation"
           ? "1-3 minutes"
+          : workflowName === "encoding"
+          ? "3-8 minutes"
           : undefined,
       createdAt: now,
       updatedAt: now,

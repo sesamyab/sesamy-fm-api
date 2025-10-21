@@ -128,7 +128,10 @@
                         "Fn::Join": [
                           "",
                           [
-                            "610396205502.dkr.ecr.eu-west-1.",
+                            {
+                              "Ref": "AWS::AccountId"
+                            },
+                            ".dkr.ecr.us-east-1.",
                             {
                               "Ref": "AWS::URLSuffix"
                             },
@@ -244,7 +247,11 @@
                       "Fn::Join": [
                         "",
                         [
-                          "arn:aws:execute-api:eu-west-1:610396205502:",
+                          "arn:aws:execute-api:us-east-1:",
+                          {
+                            "Ref": "AWS::AccountId"
+                          },
+                          ":",
                           {
                             "Ref": "EncodingApi29D606F9"
                           },
@@ -398,7 +405,7 @@
                       "aws:cdk:cloudformation:type": "AWS::ApiGateway::Stage",
                       "aws:cdk:cloudformation:props": {
                         "deploymentId": {
-                          "Ref": "EncodingApiDeploymentD5703D1404ffca8d44a5911eb5f65b72530c760d"
+                          "Ref": "EncodingApiDeploymentD5703D144eaf0dc85904189be38fd270745b08e0"
                         },
                         "methodSettings": [
                           {
@@ -605,7 +612,11 @@
                                   "Fn::Join": [
                                     "",
                                     [
-                                      "arn:aws:execute-api:eu-west-1:610396205502:",
+                                      "arn:aws:execute-api:us-east-1:",
+                                      {
+                                        "Ref": "AWS::AccountId"
+                                      },
+                                      ":",
                                       {
                                         "Ref": "EncodingApi29D606F9"
                                       },
@@ -642,7 +653,11 @@
                                   "Fn::Join": [
                                     "",
                                     [
-                                      "arn:aws:execute-api:eu-west-1:610396205502:",
+                                      "arn:aws:execute-api:us-east-1:",
+                                      {
+                                        "Ref": "AWS::AccountId"
+                                      },
+                                      ":",
                                       {
                                         "Ref": "EncodingApi29D606F9"
                                       },
@@ -671,7 +686,7 @@
                                     "Fn::Join": [
                                       "",
                                       [
-                                        "arn:aws:apigateway:eu-west-1:lambda:path/2015-03-31/functions/",
+                                        "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/",
                                         {
                                           "Fn::GetAtt": [
                                             "EncodingFunctionABC530E0",
@@ -734,7 +749,11 @@
                               "Fn::Join": [
                                 "",
                                 [
-                                  "arn:aws:execute-api:eu-west-1:610396205502:",
+                                  "arn:aws:execute-api:us-east-1:",
+                                  {
+                                    "Ref": "AWS::AccountId"
+                                  },
+                                  ":",
                                   {
                                     "Ref": "EncodingApi29D606F9"
                                   },
@@ -771,7 +790,11 @@
                               "Fn::Join": [
                                 "",
                                 [
-                                  "arn:aws:execute-api:eu-west-1:610396205502:",
+                                  "arn:aws:execute-api:us-east-1:",
+                                  {
+                                    "Ref": "AWS::AccountId"
+                                  },
+                                  ":",
                                   {
                                     "Ref": "EncodingApi29D606F9"
                                   },
@@ -800,7 +823,7 @@
                                 "Fn::Join": [
                                   "",
                                   [
-                                    "arn:aws:apigateway:eu-west-1:lambda:path/2015-03-31/functions/",
+                                    "arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/",
                                     {
                                       "Fn::GetAtt": [
                                         "EncodingFunctionABC530E0",
@@ -892,7 +915,7 @@
                         ]
                       ]
                     },
-                    "dashboardName": "sesamy-encoding-dev-eu-west-1"
+                    "dashboardName": "sesamy-encoding-dev-us-east-1"
                   }
                 },
                 "constructInfo": {

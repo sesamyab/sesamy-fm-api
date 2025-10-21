@@ -4,6 +4,18 @@
 
 This is a Cloudflare Workers project that provides a podcast management API with audio encoding, transcription, and media processing capabilities.
 
+## Documentation Guidelines
+
+**⚠️ IMPORTANT: Do NOT create new markdown documentation files without explicit user approval.**
+
+When a user asks for documentation:
+
+1. **First**, propose what documentation you plan to create and where
+2. **Wait** for the user to approve or modify the plan
+3. **Only then** create the documentation
+
+This prevents documentation sprawl and keeps the codebase clean. The main documentation should be in `README.md`.
+
 ## Important Project Structure Notes
 
 ### Container Setup
@@ -66,9 +78,57 @@ The system supports these task types:
 
 ### Deployment
 
+#### Cloudflare Worker Deployment
+
 - Deploy with `npx wrangler deploy`
-- Container is deployed as part of the same project
 - Environment variables configured in `wrangler.toml`
+- Secrets managed with `npx wrangler secret put <NAME>`
+
+#### AWS Lambda Encoding Service Deployment
+
+The project uses AWS Lambda for audio encoding (instead of Cloudflare Durable Object containers). To deploy the Lambda:
+
+1. **Build and push Docker image** (**CRITICAL: Must build for x86_64/amd64 architecture**):
+
+   ```bash
+   # Login to ECR
+   AWS_PROFILE=dev aws ecr get-login-password --region us-east-1 | \
+     docker login --username AWS --password-stdin \
+     610396205502.dkr.ecr.us-east-1.amazonaws.com
+
+   # Build for x86_64 (amd64) - Lambda requires this architecture
+   # Use buildx with --platform flag to cross-compile on ARM Mac
+   docker buildx build --platform linux/amd64 \
+     -f Dockerfile.lambda \
+     -t 610396205502.dkr.ecr.us-east-1.amazonaws.com/sesamy-encoding-dev:v1 \
+     --load .
+
+   # Push to ECR
+   docker push 610396205502.dkr.ecr.us-east-1.amazonaws.com/sesamy-encoding-dev:v1
+   ```
+
+2. **Update Lambda function**:
+
+   ```bash
+   AWS_PROFILE=dev aws lambda update-function-code \
+     --function-name sesamy-encoding-dev \
+     --image-uri 610396205502.dkr.ecr.us-east-1.amazonaws.com/sesamy-encoding-dev:v1 \
+     --region us-east-1
+   ```
+
+3. **Verify deployment**:
+   ```bash
+   AWS_PROFILE=dev aws lambda get-function-configuration \
+     --function-name sesamy-encoding-dev \
+     --region us-east-1 | grep -i "state\|update"
+   ```
+
+**Important Notes:**
+
+- Use `DOCKER_BUILDKIT=0` to build with legacy Docker format (Lambda requires Docker v2 schema 2 manifest)
+- Change tag version (e.g., `v1`, `v2`) for each deployment to avoid caching issues
+- Lambda function URL: https://c6bf5it5y3cxvjdjret4wroeli0neapt.lambda-url.us-east-1.on.aws/
+- The Lambda generates audio encodings and metadata (waveform, silences, ID3 tags)
 
 ## Common Patterns
 
