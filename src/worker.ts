@@ -34,7 +34,8 @@ export default {
       env.AUTH0_CLIENT_ID,
       env.AUTH0_CLIENT_SECRET,
       env.TTS_GENERATION_WORKFLOW,
-      env.ENCODING_WORKFLOW
+      env.ENCODING_WORKFLOW,
+      env.ENCODING_CONTAINER
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;

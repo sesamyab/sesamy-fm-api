@@ -57,10 +57,8 @@ const readinessRoute = createRoute({
   },
 });
 
-export function registerHealthRoutes<T extends Env = any>(
-  app: OpenAPIHono<T>,
-  database?: D1Database
-) {
+export function createHealthRoutes(database?: D1Database) {
+  const app = new OpenAPIHono();
   const db = getDatabase(database);
 
   // --------------------------------
@@ -101,4 +99,6 @@ export function registerHealthRoutes<T extends Env = any>(
       );
     }
   });
+
+  return app;
 }

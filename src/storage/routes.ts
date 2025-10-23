@@ -48,8 +48,28 @@ storage.all("/file", async (ctx) => {
       if (file.httpMetadata?.contentType) {
         headers["Content-Type"] = file.httpMetadata.contentType;
       }
+      // Set cache control - default to 1 year for immutable content, or use provided value
       if (file.httpMetadata?.cacheControl) {
         headers["Cache-Control"] = file.httpMetadata.cacheControl;
+      } else {
+        // Audio and image files are typically immutable (new upload = new file)
+        headers["Cache-Control"] = "public, max-age=31536000, immutable";
+      }
+
+      // Add ETag for caching
+      if (file.etag) {
+        headers["ETag"] = file.etag;
+      }
+
+      // Check If-None-Match for conditional requests
+      const ifNoneMatch = ctx.req.header("If-None-Match");
+      if (ifNoneMatch && file.etag && ifNoneMatch === file.etag) {
+        return new Response(null, {
+          status: 304,
+          headers: {
+            ETag: file.etag,
+          },
+        });
       }
 
       return new Response(file.data, {

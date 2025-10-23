@@ -33,14 +33,15 @@ async function signImageUrlInShow(show: any, audioService?: AudioService) {
   return show;
 }
 
-export function registerShowRoutes(
-  app: OpenAPIHono<AppContext>,
+export function createShowRoutes(
   showService: ShowService,
   audioService?: AudioService,
   imageService?: ImageService,
   database?: D1Database,
   importShowWorkflow?: Workflow
 ) {
+  const app = new OpenAPIHono<AppContext>();
+
   // --------------------------------
   // GET /shows
   // --------------------------------
@@ -287,4 +288,6 @@ export function registerShowRoutes(
       }
     }
   );
+
+  return app;
 }

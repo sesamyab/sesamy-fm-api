@@ -47,12 +47,22 @@ export interface MetadataRequest {
   audioUrl: string;
 }
 
+export interface Chapter {
+  startTime: number; // in seconds
+  endTime?: number; // in seconds
+  title: string;
+  url?: string;
+  image?: string;
+  toc: boolean; // table of contents flag (required)
+}
+
 export interface MetadataResponse {
   success: boolean;
   duration?: number;
   channels?: number;
   sampleRate?: number;
   inputBitrate?: number;
+  chapters?: Chapter[];
   error?: string;
 }
 

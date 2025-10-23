@@ -37,11 +37,12 @@ const getShowFeedRoute = createRoute({
   },
 });
 
-export function registerFeedRoutes<T extends Env = any>(
-  app: OpenAPIHono<T>,
+export function createFeedRoutes(
   showService: ShowService,
   episodeRepository: EpisodeRepository
 ) {
+  const app = new OpenAPIHono();
+
   // --------------------------------
   // GET /feeds/{show_id}
   // --------------------------------
@@ -75,4 +76,6 @@ export function registerFeedRoutes<T extends Env = any>(
     ctx.header("Content-Type", "application/rss+xml");
     return ctx.text(rssFeed);
   });
+
+  return app;
 }

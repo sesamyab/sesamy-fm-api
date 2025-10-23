@@ -17,6 +17,68 @@ import type { AppContext } from "../auth/types";
 import { getOrgId } from "../auth/helpers";
 import { NotFoundError } from "../common/errors";
 
+// Utility function to parse encodedAudioUrls from JSON string to object
+function parseEncodedAudioUrls(episode: any) {
+  if (
+    episode.encodedAudioUrls &&
+    typeof episode.encodedAudioUrls === "string"
+  ) {
+    try {
+      return {
+        ...episode,
+        encodedAudioUrls: JSON.parse(episode.encodedAudioUrls),
+      };
+    } catch (error) {
+      console.warn(
+        "Failed to parse encodedAudioUrls for episode:",
+        episode.id,
+        error
+      );
+    }
+  }
+  return episode;
+}
+
+// Utility function to parse adMarkers from JSON string to array
+function parseAdMarkers(episode: any) {
+  if (episode.adMarkers && typeof episode.adMarkers === "string") {
+    try {
+      return {
+        ...episode,
+        adMarkers: JSON.parse(episode.adMarkers),
+      };
+    } catch (error) {
+      console.warn("Failed to parse adMarkers for episode:", episode.id, error);
+      return { ...episode, adMarkers: null };
+    }
+  }
+  return episode;
+}
+
+// Utility function to parse chapters from JSON string to array
+function parseChapters(episode: any) {
+  if (episode.chapters && typeof episode.chapters === "string") {
+    try {
+      return {
+        ...episode,
+        chapters: JSON.parse(episode.chapters),
+      };
+    } catch (error) {
+      console.warn("Failed to parse chapters for episode:", episode.id, error);
+      return { ...episode, chapters: null };
+    }
+  }
+  return episode;
+}
+
+// Utility function to parse all JSON fields in an episode
+function parseEpisodeJsonFields(episode: any) {
+  let parsed = parseEncodedAudioUrls(episode);
+  parsed = parseAdMarkers(parsed);
+  parsed = parseChapters(parsed);
+  return parsed;
+}
+
 // Utility function to sign imageUrl in episode data
 async function signImageUrlInEpisode(
   episode: any,
@@ -442,14 +504,110 @@ const putEpisodeScriptRoute = createRoute({
   security: [{ Bearer: ["podcast:write"] }],
 });
 
-export function registerEpisodeRoutes(
-  app: OpenAPIHono<AppContext>,
+// Get episode encoding metadata
+const getEpisodeMetadataRoute = createRoute({
+  method: "get",
+  path: "/shows/{show_id}/episodes/{episode_id}/metadata",
+  tags: ["episodes"],
+  summary: "Get episode encoding metadata",
+  description:
+    "Get the encoding metadata for an episode (includes format details, bitrates, etc.)",
+  request: {
+    params: EpisodeParamsSchema,
+  },
+  responses: {
+    200: {
+      description: "Metadata retrieved successfully",
+      content: {
+        "application/json": {
+          schema: z.object({
+            formats: z.array(
+              z.object({
+                format: z.string(),
+                bitrate: z.number(),
+                metadata: z.any(),
+              })
+            ),
+          }),
+        },
+      },
+    },
+    404: {
+      description: "Episode not found or metadata not available",
+    },
+    503: {
+      description: "Storage not available",
+    },
+  },
+  security: [{ Bearer: ["podcast:read"] }],
+});
+
+// Get episode audio with optional format/bitrate selection
+const getEpisodeAudioRoute = createRoute({
+  method: "get",
+  path: "/shows/{show_id}/episodes/{episode_id}/audio",
+  tags: ["episodes"],
+  summary: "Get episode audio",
+  description:
+    "Stream episode audio file. Returns encoded audio if available, otherwise falls back to raw audio. Supports Range requests for seeking.",
+  request: {
+    params: EpisodeParamsSchema,
+    query: z.object({
+      format: z.enum(["mp3", "opus"]).optional().openapi({
+        description:
+          "Preferred audio format (mp3 or opus). Defaults to mp3 if available.",
+      }),
+      bitrate: z.coerce.number().optional().openapi({
+        description:
+          "Preferred bitrate in kbps (e.g., 128, 64). Defaults to highest available.",
+      }),
+    }),
+  },
+  responses: {
+    200: {
+      description: "Audio file stream",
+      content: {
+        "audio/mpeg": {
+          schema: { type: "string", format: "binary" },
+        },
+        "audio/ogg": {
+          schema: { type: "string", format: "binary" },
+        },
+      },
+    },
+    206: {
+      description: "Partial content (for Range requests)",
+      content: {
+        "audio/mpeg": {
+          schema: { type: "string", format: "binary" },
+        },
+        "audio/ogg": {
+          schema: { type: "string", format: "binary" },
+        },
+      },
+    },
+    404: {
+      description: "Episode or audio not found",
+    },
+    416: {
+      description: "Range not satisfiable",
+    },
+    503: {
+      description: "Storage not available",
+    },
+  },
+  security: [{ Bearer: ["podcast:read"] }],
+});
+
+export function createEpisodeRoutes(
   episodeService: EpisodeService,
   audioService?: AudioService,
   imageService?: ImageService,
   bucket?: R2Bucket,
   ttsGenerationWorkflow?: Workflow
 ) {
+  const app = new OpenAPIHono<AppContext>();
+
   // --------------------------------
   // GET /shows/{show_id}/episodes
   // --------------------------------
@@ -474,6 +632,8 @@ export function registerEpisodeRoutes(
           signedEpisode,
           audioService
         );
+        // Parse JSON fields (encodedAudioUrls, adMarkers, chapters)
+        signedEpisode = parseEpisodeJsonFields(signedEpisode);
         return signedEpisode;
       })
     );
@@ -504,6 +664,8 @@ export function registerEpisodeRoutes(
     let signedEpisode = await signAudioUrlInEpisode(episode, audioService);
     signedEpisode = await signImageUrlInEpisode(signedEpisode, imageService);
     signedEpisode = await signScriptUrlInEpisode(signedEpisode, audioService);
+    // Parse JSON fields (encodedAudioUrls, adMarkers, chapters)
+    signedEpisode = parseEpisodeJsonFields(signedEpisode);
 
     return ctx.json(signedEpisode);
   });
@@ -566,6 +728,8 @@ export function registerEpisodeRoutes(
       let signedEpisode = await signAudioUrlInEpisode(episode, audioService);
       signedEpisode = await signImageUrlInEpisode(signedEpisode, imageService);
       signedEpisode = await signScriptUrlInEpisode(signedEpisode, audioService);
+      // Parse encodedAudioUrls from JSON string to object
+      signedEpisode = parseEpisodeJsonFields(signedEpisode);
 
       return ctx.json(signedEpisode, 201);
     } catch (error) {
@@ -601,6 +765,8 @@ export function registerEpisodeRoutes(
       let signedEpisode = await signAudioUrlInEpisode(episode, audioService);
       signedEpisode = await signImageUrlInEpisode(signedEpisode, imageService);
       signedEpisode = await signScriptUrlInEpisode(signedEpisode, audioService);
+      // Parse encodedAudioUrls from JSON string to object
+      signedEpisode = parseEpisodeJsonFields(signedEpisode);
 
       return ctx.json(signedEpisode);
     } catch (error) {
@@ -631,6 +797,8 @@ export function registerEpisodeRoutes(
       let signedEpisode = await signAudioUrlInEpisode(episode, audioService);
       signedEpisode = await signImageUrlInEpisode(signedEpisode, imageService);
       signedEpisode = await signScriptUrlInEpisode(signedEpisode, audioService);
+      // Parse encodedAudioUrls from JSON string to object
+      signedEpisode = parseEpisodeJsonFields(signedEpisode);
 
       return ctx.json(signedEpisode);
     } catch (error) {
@@ -1135,4 +1303,398 @@ export function registerEpisodeRoutes(
       throw new HTTPException(500, { message: JSON.stringify(problem) });
     }
   });
+
+  // --------------------------------
+  // GET /shows/{show_id}/episodes/{episode_id}/metadata
+  // --------------------------------
+  app.openapi(getEpisodeMetadataRoute, async (ctx) => {
+    if (!bucket) {
+      const problem = {
+        type: "service_unavailable",
+        title: "Service Unavailable",
+        status: 503,
+        detail: "Storage service is not available",
+        instance: ctx.req.path,
+      };
+      throw new HTTPException(503, { message: JSON.stringify(problem) });
+    }
+
+    const { show_id, episode_id } = ctx.req.valid("param");
+
+    try {
+      // First, verify the episode exists
+      const episode = await episodeService.getEpisodeById(show_id, episode_id);
+
+      if (!episode || episode.showId !== show_id) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Episode not found",
+          instance: ctx.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      // Parse encodedAudioUrls to get available formats
+      const encodedAudioUrls = episode.encodedAudioUrls
+        ? typeof episode.encodedAudioUrls === "string"
+          ? JSON.parse(episode.encodedAudioUrls)
+          : episode.encodedAudioUrls
+        : null;
+
+      if (!encodedAudioUrls || Object.keys(encodedAudioUrls).length === 0) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "No encoding metadata available for this episode",
+          instance: ctx.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      // Fetch metadata for each format
+      const formats = [];
+      for (const [formatKey, audioUrl] of Object.entries(encodedAudioUrls)) {
+        // Parse format key (e.g., "mp3_128" or "opus_64")
+        const [format, bitrateStr] = formatKey.split("_");
+        const bitrate = parseInt(bitrateStr);
+
+        // Construct metadata R2 key
+        const metadataR2Key = `episodes/${episode_id}/audio_${bitrate}kbps_metadata.json`;
+
+        try {
+          // Fetch metadata from R2
+          const metadataObject = await bucket.get(metadataR2Key);
+
+          if (metadataObject) {
+            const metadataText = await metadataObject.text();
+            const metadata = JSON.parse(metadataText);
+
+            formats.push({
+              format,
+              bitrate,
+              metadata,
+            });
+          }
+        } catch (metadataError) {
+          console.warn(
+            `Failed to fetch metadata for ${formatKey}:`,
+            metadataError
+          );
+          // Continue with other formats even if one fails
+        }
+      }
+
+      if (formats.length === 0) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "No metadata files found in storage",
+          instance: ctx.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      return ctx.json({ formats });
+    } catch (error: any) {
+      if (error instanceof HTTPException) {
+        throw error;
+      }
+
+      console.error("Failed to fetch metadata:", error);
+
+      const problem = {
+        type: "internal_server_error",
+        title: "Internal Server Error",
+        status: 500,
+        detail: "Failed to retrieve metadata",
+        instance: ctx.req.path,
+      };
+      throw new HTTPException(500, { message: JSON.stringify(problem) });
+    }
+  });
+
+  // --------------------------------
+  // GET /shows/{show_id}/episodes/{episode_id}/audio
+  // --------------------------------
+  app.openapi(getEpisodeAudioRoute, async (ctx) => {
+    if (!bucket) {
+      const problem = {
+        type: "service_unavailable",
+        title: "Service Unavailable",
+        status: 503,
+        detail: "Storage service is not available",
+        instance: ctx.req.path,
+      };
+      throw new HTTPException(503, { message: JSON.stringify(problem) });
+    }
+
+    const { show_id, episode_id } = ctx.req.valid("param");
+    const { format, bitrate } = ctx.req.valid("query");
+
+    try {
+      // Get the episode
+      const episode = await episodeService.getEpisodeById(show_id, episode_id);
+
+      if (!episode || episode.showId !== show_id) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Episode not found",
+          instance: ctx.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      // Parse encodedAudioUrls to find the best match
+      const encodedAudioUrls = episode.encodedAudioUrls
+        ? typeof episode.encodedAudioUrls === "string"
+          ? JSON.parse(episode.encodedAudioUrls)
+          : episode.encodedAudioUrls
+        : null;
+
+      console.log("Episode audio info:", {
+        episodeId: episode_id,
+        hasEncodedUrls: !!encodedAudioUrls,
+        encodedUrlKeys: encodedAudioUrls ? Object.keys(encodedAudioUrls) : [],
+        audioUrl: episode.audioUrl,
+        requestedFormat: format,
+        requestedBitrate: bitrate,
+      });
+
+      let audioR2Key: string | null = null;
+      let contentType = "audio/mpeg"; // default
+
+      // Try to find encoded audio based on preferences
+      if (encodedAudioUrls && Object.keys(encodedAudioUrls).length > 0) {
+        // Build a list of available formats with their keys
+        const availableFormats = Object.entries(encodedAudioUrls).map(
+          ([key, value]) => {
+            // Parse format key - could be "mp3_128" or "mp3_128kbps"
+            const parts = key.split("_");
+            const fmt = parts[0];
+            const bitrateStr = parts[1]?.replace("kbps", "") || "128";
+
+            // Handle both string URLs and objects with url property
+            let urlValue: string;
+            if (typeof value === "string") {
+              urlValue = value;
+            } else if (value && typeof value === "object" && "url" in value) {
+              urlValue = String((value as any).url);
+            } else {
+              urlValue = String(value);
+            }
+
+            return {
+              key,
+              format: fmt,
+              bitrate: parseInt(bitrateStr),
+              url: urlValue,
+            };
+          }
+        );
+
+        // Filter by format if specified
+        let candidates = format
+          ? availableFormats.filter((f) => f.format === format)
+          : availableFormats;
+
+        // If no format specified, prefer mp3
+        if (!format && candidates.length > 0) {
+          const mp3Options = candidates.filter((f) => f.format === "mp3");
+          if (mp3Options.length > 0) {
+            candidates = mp3Options;
+          }
+        }
+
+        // Filter by bitrate if specified
+        if (bitrate && candidates.length > 0) {
+          const exactMatch = candidates.find((f) => f.bitrate === bitrate);
+          if (exactMatch) {
+            candidates = [exactMatch];
+          }
+        }
+
+        // Pick the highest bitrate from remaining candidates
+        if (candidates.length > 0) {
+          candidates.sort((a, b) => b.bitrate - a.bitrate);
+          const selected = candidates[0];
+
+          console.log("Selected encoded audio:", {
+            format: selected.format,
+            bitrate: selected.bitrate,
+            url: selected.url,
+          });
+
+          // Extract R2 key from URL
+          if (selected.url.startsWith("r2://")) {
+            audioR2Key = selected.url.replace("r2://", "");
+          } else if (
+            selected.url.startsWith("http://") ||
+            selected.url.startsWith("https://")
+          ) {
+            // Extract from full URL
+            try {
+              const url = new URL(selected.url);
+              audioR2Key = url.pathname.substring(1); // Remove leading slash
+            } catch (urlError) {
+              console.error(
+                "Failed to parse encoded audio URL:",
+                selected.url,
+                urlError
+              );
+            }
+          } else {
+            // Assume it's already an R2 key
+            audioR2Key = selected.url;
+          }
+
+          // Set content type based on format
+          contentType = selected.format === "opus" ? "audio/ogg" : "audio/mpeg";
+        }
+      }
+
+      // Fall back to raw audio if no encoded version found
+      if (!audioR2Key && episode.audioUrl) {
+        if (episode.audioUrl.startsWith("r2://")) {
+          audioR2Key = episode.audioUrl.replace("r2://", "");
+        } else if (
+          episode.audioUrl.startsWith("http://") ||
+          episode.audioUrl.startsWith("https://")
+        ) {
+          // Parse the R2 key from the full URL
+          try {
+            const url = new URL(episode.audioUrl);
+            // Remove leading slash from pathname to get R2 key
+            audioR2Key = url.pathname.substring(1);
+          } catch (urlError) {
+            console.error(
+              "Failed to parse audio URL:",
+              episode.audioUrl,
+              urlError
+            );
+          }
+        } else {
+          // Assume it's already an R2 key
+          audioR2Key = episode.audioUrl;
+        }
+        // Try to infer content type from extension
+        if (
+          audioR2Key &&
+          (audioR2Key.endsWith(".opus") || audioR2Key.endsWith(".ogg"))
+        ) {
+          contentType = "audio/ogg";
+        }
+      }
+
+      console.log("Audio R2 key resolved:", {
+        audioR2Key,
+        contentType,
+      });
+
+      if (!audioR2Key) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "No audio file available for this episode",
+          instance: ctx.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      // Get Range header for partial content support
+      const rangeHeader = ctx.req.header("Range");
+
+      // Fetch audio from R2
+      const options: R2GetOptions = {};
+      if (rangeHeader) {
+        options.range = ctx.req.raw.headers as any;
+      }
+
+      const audioObject = await bucket.get(audioR2Key, options);
+
+      if (!audioObject) {
+        const problem = {
+          type: "not_found",
+          title: "Not Found",
+          status: 404,
+          detail: "Audio file not found in storage",
+          instance: ctx.req.path,
+        };
+        throw new HTTPException(404, { message: JSON.stringify(problem) });
+      }
+
+      // Prepare response headers
+      const headers: Record<string, string> = {
+        "Content-Type": contentType,
+        "Accept-Ranges": "bytes",
+        "Cache-Control": "private, max-age=3600",
+      };
+
+      // Handle Range request
+      if (rangeHeader && audioObject.range) {
+        const range = audioObject.range;
+        let start: number;
+        let end: number;
+        let length: number;
+
+        // R2Range can be {offset?: number, length: number} or {suffix: number}
+        if ("suffix" in range) {
+          // suffix range - last N bytes
+          length = range.suffix;
+          start = audioObject.size - length;
+          end = audioObject.size - 1;
+        } else {
+          // offset/length range
+          start = range.offset ?? 0;
+          length = range.length ?? audioObject.size - start;
+          end = start + length - 1;
+        }
+
+        headers["Content-Range"] = `bytes ${start}-${end}/${audioObject.size}`;
+        headers["Content-Length"] = length.toString();
+
+        return new Response(audioObject.body, {
+          status: 206,
+          headers,
+        });
+      }
+
+      // Full content response
+      headers["Content-Length"] = audioObject.size.toString();
+
+      return new Response(audioObject.body, {
+        status: 200,
+        headers,
+      });
+    } catch (error: any) {
+      if (error instanceof HTTPException) {
+        throw error;
+      }
+
+      console.error("Failed to stream audio:", error);
+      console.error("Error details:", {
+        message: error.message,
+        stack: error.stack,
+        episodeId: episode_id,
+        showId: show_id,
+      });
+
+      const problem = {
+        type: "internal_server_error",
+        title: "Internal Server Error",
+        status: 500,
+        detail: "Failed to retrieve audio",
+        instance: ctx.req.path,
+      };
+      throw new HTTPException(500, { message: JSON.stringify(problem) });
+    }
+  });
+
+  return app;
 }

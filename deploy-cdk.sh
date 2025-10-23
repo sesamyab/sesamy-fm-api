@@ -60,7 +60,10 @@ check_prerequisites() {
     
     # Check AWS credentials
     if ! aws sts get-caller-identity &> /dev/null; then
-        echo_error "AWS credentials not configured. Please run 'aws configure' first."
+        echo_error "AWS credentials not configured or session expired."
+        echo_info "For AWS SSO, run: aws sso login --profile <profile-name>"
+        echo_info "Or run: aws configure sso"
+        echo_info "For standard credentials, run: aws configure"
         exit 1
     fi
     
@@ -71,11 +74,15 @@ check_prerequisites() {
 install_dependencies() {
     echo_step "Installing CDK dependencies..."
     
+    cd cdk
+    
     if [ ! -d "node_modules" ]; then
         npm install
     else
         echo_info "Dependencies already installed."
     fi
+    
+    cd ..
     
     # Install CDK globally if not present
     if ! command -v cdk &> /dev/null; then
@@ -100,7 +107,9 @@ bootstrap_cdk() {
 # Build TypeScript
 build_project() {
     echo_step "Building TypeScript project..."
+    cd cdk
     npm run build
+    cd ..
 }
 
 # Deploy infrastructure
@@ -109,6 +118,8 @@ deploy_infrastructure() {
     
     echo_info "Deploying to environment: $ENVIRONMENT"
     echo_info "AWS Region: $AWS_REGION"
+    
+    cd cdk
     
     # Show diff first
     echo_info "Showing deployment diff..."
@@ -120,8 +131,11 @@ deploy_infrastructure() {
         cdk deploy --context environment=$ENVIRONMENT --context region=$AWS_REGION --require-approval never
     else
         echo_info "Deployment cancelled."
+        cd ..
         exit 0
     fi
+    
+    cd ..
 }
 
 # Get ECR repository URL
@@ -151,11 +165,9 @@ build_and_push_image() {
     echo_info "Logging into ECR..."
     aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin $ECR_URL
     
-    # Build the image (from parent directory)
+    # Build the image from project root
     echo_info "Building Docker image..."
-    cd ..
-    docker build -f $DOCKERFILE -t $PROJECT_NAME-lambda .
-    cd cdk
+    docker build --platform linux/amd64 --provenance=false -f Dockerfile.lambda -t $PROJECT_NAME-lambda .
     
     # Tag for ECR
     docker tag $PROJECT_NAME-lambda:latest $ECR_URL:latest

@@ -87,10 +87,11 @@ export class CreativeUploadService {
     let signedUrl: string;
 
     if (this.bucket) {
-      // Upload to R2 bucket
+      // Upload to R2 bucket with cache headers
       await this.bucket.put(key, file.buffer, {
         httpMetadata: {
           contentType: file.mimeType,
+          cacheControl: "public, max-age=31536000, immutable",
         },
       });
 
@@ -209,10 +210,11 @@ export class CreativeUploadService {
     let signedUrl: string;
 
     if (this.bucket) {
-      // Upload to R2 bucket
+      // Upload to R2 bucket with cache headers
       await this.bucket.put(key, file.buffer, {
         httpMetadata: {
           contentType: file.mimeType,
+          cacheControl: "public, max-age=31536000, immutable",
         },
       });
 
@@ -331,10 +333,11 @@ export class CreativeUploadService {
     let signedUrl: string;
 
     if (this.bucket) {
-      // Upload to R2 bucket
+      // Upload to R2 bucket with cache headers
       await this.bucket.put(key, file.buffer, {
         httpMetadata: {
           contentType: file.mimeType,
+          cacheControl: "public, max-age=31536000, immutable",
         },
       });
 

@@ -81,7 +81,10 @@ export class OrganizationService {
   async createOrganization(
     name: string,
     userId: string,
-    displayName?: string
+    displayName?: string,
+    ttsModel?: string,
+    sttModel?: string,
+    autoTts?: boolean
   ): Promise<{ organization: Organization; auth0_org: any }> {
     if (!this.auth0Service) {
       throw new Error("Auth0 service not configured");
@@ -115,6 +118,9 @@ export class OrganizationService {
         const newOrg: NewOrganization = {
           id: auth0Org.id, // Use Auth0 ID directly
           name: auth0Org.display_name || auth0Org.name,
+          ttsModel: ttsModel || null,
+          sttModel: sttModel || null,
+          autoTts: autoTts !== undefined ? autoTts : false,
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString(),
         };

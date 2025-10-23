@@ -2,7 +2,15 @@
 
 import { OpenAPIHono, createRoute } from "@hono/zod-openapi";
 import { HTTPException } from "hono/http-exception";
-import { AudioUploadSchema, AudioParamsSchema } from "./schemas";
+import {
+  AudioUploadSchema,
+  AudioParamsSchema,
+  InitiateMultipartUploadSchema,
+  MultipartUploadResponseSchema,
+  CompleteMultipartUploadSchema,
+  ChunkParamsSchema,
+  ChunkUploadResponseSchema,
+} from "./schemas";
 import { AudioService } from "./service";
 import { NotFoundError } from "../common/errors";
 import type { AppContext } from "../auth/types";
@@ -79,10 +87,9 @@ const getAudioRoute = createRoute({
   security: [{ Bearer: ["podcast:read"] }],
 });
 
-export function registerAudioRoutes(
-  app: OpenAPIHono<AppContext>,
-  audioService: AudioService
-) {
+export function createAudioRoutes(audioService: AudioService) {
+  const app = new OpenAPIHono<AppContext>();
+
   // --------------------------------
   // POST /shows/{show_id}/episodes/{episode_id}/audio
   // --------------------------------
@@ -318,4 +325,155 @@ export function registerAudioRoutes(
     }
   });
   */
+
+  // --------------------------------
+  // POST /shows/{show_id}/episodes/{episode_id}/audio/multipart/initiate
+  // --------------------------------
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/shows/{show_id}/episodes/{episode_id}/audio/multipart/initiate",
+      tags: ["audio"],
+      summary: "Initiate multipart audio upload",
+      description: "Start a multipart upload session for large audio files",
+      request: {
+        params: AudioParamsSchema,
+        body: {
+          content: {
+            "application/json": {
+              schema: InitiateMultipartUploadSchema,
+            },
+          },
+        },
+      },
+      responses: {
+        200: {
+          content: {
+            "application/json": {
+              schema: MultipartUploadResponseSchema,
+            },
+          },
+          description: "Multipart upload session initiated",
+        },
+      },
+      security: [{ Bearer: ["podcast:write"] }],
+    }),
+    async (ctx) => {
+      const { show_id, episode_id } = ctx.req.valid("param");
+      const { fileName, fileSize, mimeType, totalChunks } =
+        ctx.req.valid("json");
+
+      const result = await audioService.initiateMultipartUpload(
+        show_id,
+        episode_id,
+        fileName,
+        fileSize,
+        mimeType,
+        totalChunks
+      );
+
+      return ctx.json({
+        ...result,
+        chunkSize: Math.ceil(fileSize / totalChunks),
+      });
+    }
+  );
+
+  // --------------------------------
+  // PUT /shows/{show_id}/episodes/{episode_id}/audio/multipart/{upload_id}/chunk/{chunk_number}
+  // --------------------------------
+  app.openapi(
+    createRoute({
+      method: "put",
+      path: "/shows/{show_id}/episodes/{episode_id}/audio/multipart/{upload_id}/chunk/{chunk_number}",
+      tags: ["audio"],
+      summary: "Upload audio chunk",
+      description: "Upload a single chunk of the audio file",
+      request: {
+        params: ChunkParamsSchema,
+        body: {
+          content: {
+            "application/octet-stream": {
+              schema: {
+                type: "string",
+                format: "binary",
+              },
+            },
+          },
+        },
+      },
+      responses: {
+        200: {
+          content: {
+            "application/json": {
+              schema: ChunkUploadResponseSchema,
+            },
+          },
+          description: "Chunk uploaded successfully",
+        },
+      },
+      security: [{ Bearer: ["podcast:write"] }],
+    }),
+    async (ctx) => {
+      const { upload_id, chunk_number } = ctx.req.valid("param");
+
+      // Get the raw body as ArrayBuffer
+      const chunkData = await ctx.req.arrayBuffer();
+
+      const result = await audioService.uploadChunk(
+        upload_id,
+        chunk_number,
+        chunkData
+      );
+
+      return ctx.json(result);
+    }
+  );
+
+  // --------------------------------
+  // POST /shows/{show_id}/episodes/{episode_id}/audio/multipart/{upload_id}/complete
+  // --------------------------------
+  app.openapi(
+    createRoute({
+      method: "post",
+      path: "/shows/{show_id}/episodes/{episode_id}/audio/multipart/complete",
+      tags: ["audio"],
+      summary: "Complete multipart audio upload",
+      description: "Finalize the multipart upload and create the audio file",
+      request: {
+        params: AudioParamsSchema,
+        body: {
+          content: {
+            "application/json": {
+              schema: CompleteMultipartUploadSchema,
+            },
+          },
+        },
+      },
+      responses: {
+        201: {
+          content: {
+            "application/json": {
+              schema: AudioUploadSchema,
+            },
+          },
+          description: "Audio file created successfully",
+        },
+      },
+      security: [{ Bearer: ["podcast:write"] }],
+    }),
+    async (ctx) => {
+      const { show_id } = ctx.req.valid("param");
+      const { uploadId } = ctx.req.valid("json");
+
+      const result = await audioService.completeMultipartUpload(
+        show_id,
+        uploadId
+      );
+
+      return ctx.json(result, 201);
+    }
+  );
+
+  return app;
 }

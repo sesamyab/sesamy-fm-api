@@ -11,6 +11,9 @@ export const CreateShowSchema = z.object({
   language: z.string().optional(),
   categories: z.array(z.string()).optional(),
   author: z.string().optional(),
+  ttsModel: z.string().optional(),
+  sttModel: z.string().optional(),
+  autoTts: z.boolean().optional(),
 });
 
 export const UpdateShowSchema = z.object({
@@ -20,6 +23,9 @@ export const UpdateShowSchema = z.object({
   language: z.string().optional(),
   categories: z.array(z.string()).optional(),
   author: z.string().optional(),
+  ttsModel: z.string().optional(),
+  sttModel: z.string().optional(),
+  autoTts: z.boolean().optional(),
 });
 
 // Response schemas
@@ -31,6 +37,9 @@ export const ShowSchema = z.object({
   language: z.string().nullable(),
   categories: z.array(z.string()).nullable(),
   author: z.string().nullable(),
+  ttsModel: z.string().nullable(),
+  sttModel: z.string().nullable(),
+  autoTts: z.boolean().nullable(),
   createdAt: z.string().datetime(),
   updatedAt: z.string().datetime(),
 });
