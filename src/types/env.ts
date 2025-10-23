@@ -27,6 +27,7 @@ export interface CloudflareEnv {
 
   // Durable Objects
   ENCODING_CONTAINER: DurableObjectNamespace;
+  MULTIPART_UPLOAD_SESSION: DurableObjectNamespace;
 
   // AWS Lambda encoding service configuration (optional)
   AWS_LAMBDA_ENCODING_URL?: string;

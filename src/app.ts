@@ -46,7 +46,8 @@ export function createApp(
   auth0ClientSecret?: string,
   ttsGenerationWorkflow?: Workflow,
   encodingWorkflow?: Workflow,
-  encodingContainer?: DurableObjectNamespace
+  encodingContainer?: DurableObjectNamespace,
+  multipartUploadSession?: DurableObjectNamespace
 ) {
   const app = new OpenAPIHono<AppContext>();
 
@@ -79,7 +80,8 @@ export function createApp(
     r2Endpoint,
     audioProcessingWorkflow,
     encodingWorkflow,
-    encodingContainer
+    encodingContainer,
+    multipartUploadSession
   );
 
   const imageService =

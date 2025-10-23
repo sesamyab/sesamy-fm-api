@@ -8,6 +8,7 @@ import {
   EncodingService,
   type EncodingServiceConfig,
 } from "../encoding/service";
+import type { MultipartUploadState } from "./multipart-upload-session";
 
 export class AudioService {
   private audioRepo: AudioRepository;
@@ -19,6 +20,7 @@ export class AudioService {
   private presignedUrlGenerator: R2PreSignedUrlGenerator | null = null;
   private database?: D1Database;
   private encodingService?: EncodingService;
+  private multipartUploadSession?: DurableObjectNamespace;
 
   constructor(
     database?: D1Database,
@@ -29,7 +31,8 @@ export class AudioService {
     r2Endpoint?: string,
     audioProcessingWorkflow?: Workflow,
     encodingWorkflow?: Workflow,
-    encodingContainer?: DurableObjectNamespace
+    encodingContainer?: DurableObjectNamespace,
+    multipartUploadSession?: DurableObjectNamespace
   ) {
     this.database = database;
     this.audioRepo = new AudioRepository(database);
@@ -38,6 +41,7 @@ export class AudioService {
     this.audioProcessingWorkflow = audioProcessingWorkflow;
     this.encodingWorkflow = encodingWorkflow;
     this.bucket = bucket as R2Bucket;
+    this.multipartUploadSession = multipartUploadSession;
 
     console.log(
       `AudioService initialized with workflows: audioProcessing=${!!audioProcessingWorkflow}, encoding=${!!encodingWorkflow}`
@@ -526,23 +530,14 @@ export class AudioService {
     return task;
   }
 
-  // Multipart upload support using R2's native multipart API
-  private multipartUploads: Map<
-    string,
-    {
-      uploadId: string;
-      episodeId: string;
-      showId: string;
-      fileName: string;
-      fileSize: number;
-      mimeType: string;
-      r2Key: string;
-      r2UploadId: string;
-      totalChunks: number;
-      uploadedParts: Array<{ partNumber: number; etag: string }>;
-      createdAt: number;
+  // Multipart upload support using R2's native multipart API with Durable Object state
+  private getUploadSession(uploadId: string) {
+    if (!this.multipartUploadSession) {
+      throw new Error("Multipart upload session not configured");
     }
-  > = new Map();
+    const id = this.multipartUploadSession.idFromName(uploadId);
+    return this.multipartUploadSession.get(id);
+  }
 
   async initiateMultipartUpload(
     showId: string,
@@ -564,34 +559,29 @@ export class AudioService {
       },
     });
 
-    this.multipartUploads.set(uploadId, {
-      uploadId,
-      episodeId,
-      showId,
-      fileName,
-      fileSize,
-      mimeType,
-      r2Key,
-      r2UploadId: r2Upload.uploadId,
-      totalChunks,
-      uploadedParts: [],
-      createdAt: Date.now(),
+    // Store session state in Durable Object
+    const session = this.getUploadSession(uploadId);
+    const response = await session.fetch("https://stub/initialize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        uploadId,
+        episodeId,
+        showId,
+        audioId,
+        fileName,
+        fileSize,
+        mimeType,
+        r2Key,
+        r2UploadId: r2Upload.uploadId,
+        totalChunks,
+        uploadedParts: [],
+        createdAt: Date.now(),
+      }),
     });
 
-    // Clean up old uploads (older than 24 hours)
-    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-    for (const [id, upload] of this.multipartUploads.entries()) {
-      if (upload.createdAt < oneDayAgo) {
-        // Abort the R2 upload
-        try {
-          await this.bucket
-            .resumeMultipartUpload(upload.r2Key, upload.r2UploadId)
-            .abort();
-        } catch (error) {
-          console.warn(`Failed to abort old upload ${id}:`, error);
-        }
-        this.multipartUploads.delete(id);
-      }
+    if (!response.ok) {
+      throw new Error(`Failed to initialize upload session: ${await response.text()}`);
     }
 
     return {
@@ -606,7 +596,13 @@ export class AudioService {
     chunkNumber: number,
     chunkData: ArrayBuffer
   ) {
-    const upload = this.multipartUploads.get(uploadId);
+    // Get upload state from Durable Object
+    const session = this.getUploadSession(uploadId);
+    const stateResponse = await session.fetch("https://stub/getState");
+    if (!stateResponse.ok) {
+      throw new NotFoundError("Upload session not found or expired");
+    }
+    const upload = await stateResponse.json<MultipartUploadState>();
     if (!upload) {
       throw new NotFoundError("Upload session not found or expired");
     }
@@ -618,22 +614,38 @@ export class AudioService {
     );
     const uploadedPart = await r2Upload.uploadPart(chunkNumber, chunkData);
 
-    // Store the part information
-    upload.uploadedParts.push({
-      partNumber: chunkNumber,
-      etag: uploadedPart.etag,
+    // Store the part information in Durable Object (handles retries automatically)
+    const addPartResponse = await session.fetch("https://stub/addPart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        partNumber: chunkNumber,
+        etag: uploadedPart.etag,
+      }),
     });
+
+    if (!addPartResponse.ok) {
+      throw new Error(`Failed to store part: ${await addPartResponse.text()}`);
+    }
+
+    const { received, total } = await addPartResponse.json<{ received: number; total: number }>();
 
     return {
       uploadId,
       chunkNumber,
-      received: upload.uploadedParts.length,
-      total: upload.totalChunks,
+      received,
+      total,
     };
   }
 
   async completeMultipartUpload(showId: string, uploadId: string) {
-    const upload = this.multipartUploads.get(uploadId);
+    // Get upload state from Durable Object
+    const session = this.getUploadSession(uploadId);
+    const stateResponse = await session.fetch("https://stub/getState");
+    if (!stateResponse.ok) {
+      throw new NotFoundError("Upload session not found or expired");
+    }
+    const upload = await stateResponse.json<MultipartUploadState>();
     if (!upload) {
       throw new NotFoundError("Upload session not found or expired");
     }
@@ -675,7 +687,8 @@ export class AudioService {
       throw new NotFoundError("Episode not found");
     }
 
-    const audioId = upload.r2Key.split("/")[3]; // Extract audioId from key
+    // Use the audioId stored in the upload session
+    const audioId = upload.audioId;
 
     // Store the R2 key with a special prefix for database storage
     const url = `r2://${upload.r2Key}`;
@@ -731,8 +744,8 @@ export class AudioService {
       }
     );
 
-    // Clean up the multipart upload session
-    this.multipartUploads.delete(uploadId);
+    // Clean up the multipart upload session from Durable Object
+    await session.fetch("https://stub/delete", { method: "POST" });
 
     return {
       ...audioUpload,
@@ -741,7 +754,13 @@ export class AudioService {
   }
 
   async abortMultipartUpload(uploadId: string) {
-    const upload = this.multipartUploads.get(uploadId);
+    // Get upload state from Durable Object
+    const session = this.getUploadSession(uploadId);
+    const stateResponse = await session.fetch("https://stub/getState");
+    if (!stateResponse.ok) {
+      throw new NotFoundError("Upload session not found or expired");
+    }
+    const upload = await stateResponse.json<MultipartUploadState>();
     if (!upload) {
       throw new NotFoundError("Upload session not found or expired");
     }
@@ -753,14 +772,20 @@ export class AudioService {
     );
     await r2Upload.abort();
 
-    // Clean up the session
-    this.multipartUploads.delete(uploadId);
+    // Clean up the session from Durable Object
+    await session.fetch("https://stub/delete", { method: "POST" });
 
     return { success: true };
   }
 
-  getMultipartUploadStatus(uploadId: string) {
-    const upload = this.multipartUploads.get(uploadId);
+  async getMultipartUploadStatus(uploadId: string) {
+    // Get upload state from Durable Object
+    const session = this.getUploadSession(uploadId);
+    const stateResponse = await session.fetch("https://stub/getState");
+    if (!stateResponse.ok) {
+      return null;
+    }
+    const upload = await stateResponse.json<MultipartUploadState | null>();
     if (!upload) {
       return null;
     }
