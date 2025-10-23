@@ -111,6 +111,18 @@ export class MultipartUploadSession extends DurableObject {
       throw new Error("Upload session not found");
     }
 
+    // Validate partNumber is within valid bounds
+    if (partNumber < 1 || partNumber > state.totalChunks) {
+      throw new Error(
+        `Invalid part number: ${partNumber}. Must be between 1 and ${state.totalChunks}`
+      );
+    }
+
+    // Validate etag is non-empty
+    if (!etag || etag.trim().length === 0) {
+      throw new Error("ETag cannot be empty");
+    }
+
     // Find and replace existing part, or add new one
     const existingIndex = state.uploadedParts.findIndex(
       (p) => p.partNumber === partNumber
@@ -142,20 +154,43 @@ export class MultipartUploadSession extends DurableObject {
    * Alarm handler for automatic cleanup of expired sessions
    */
   async alarm(): Promise<void> {
-    const state = await this.ctx.storage.get<MultipartUploadState>("state");
-    if (!state) {
-      return; // Already cleaned up
-    }
+    try {
+      const state = await this.ctx.storage.get<MultipartUploadState>("state");
+      if (!state) {
+        console.log("Alarm triggered but no state found - already cleaned up");
+        return; // Already cleaned up
+      }
 
-    const age = Date.now() - state.createdAt;
-    if (age >= MultipartUploadSession.EXPIRY_MS) {
-      console.log(`Cleaning up expired upload session: ${state.uploadId}`);
+      const age = Date.now() - state.createdAt;
+      if (age >= MultipartUploadSession.EXPIRY_MS) {
+        console.log(
+          `Cleaning up expired upload session: ${
+            state.uploadId
+          } (age: ${Math.round(age / 1000 / 60)} minutes)`
+        );
 
-      // Note: We could abort the R2 multipart upload here, but that requires
-      // access to the R2 bucket binding, which Durable Objects don't have direct access to.
-      // The cleanup of orphaned R2 uploads should be handled by a separate cron job.
+        // Note: We could abort the R2 multipart upload here, but that requires
+        // access to the R2 bucket binding, which Durable Objects don't have direct access to.
+        // The cleanup of orphaned R2 uploads should be handled by a separate cron job.
 
-      await this.delete();
+        await this.delete();
+        console.log(
+          `Successfully cleaned up upload session: ${state.uploadId}`
+        );
+      } else {
+        console.log(
+          `Upload session ${state.uploadId} not yet expired (age: ${Math.round(
+            age / 1000 / 60
+          )} minutes)`
+        );
+      }
+    } catch (error) {
+      console.error(
+        "Error in alarm handler for multipart upload session:",
+        error
+      );
+      // Log the error but don't throw to prevent alarm retry loops
+      // The alarm will be rescheduled if the session still exists
     }
   }
 }

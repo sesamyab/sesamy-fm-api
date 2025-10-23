@@ -2,7 +2,7 @@ import { v4 as uuidv4 } from "uuid";
 import { AudioRepository } from "./repository";
 import { EventPublisher } from "../events/publisher";
 import { EpisodeRepository } from "../episodes/repository";
-import { NotFoundError } from "../common/errors";
+import { NotFoundError, ValidationError } from "../common/errors";
 import { R2PreSignedUrlGenerator } from "../utils";
 import {
   EncodingService,
@@ -356,9 +356,41 @@ export class AudioService {
       return null;
     }
 
+    // Check if episode has encoded audio URLs
+    const episode = await this.episodeRepo.findById(showId, episodeId);
+    let finalUrl = audioData.url;
+
+    // Prefer encoded audio if available
+    if (episode?.encodedAudioUrls) {
+      try {
+        const encodedUrls = JSON.parse(episode.encodedAudioUrls) as Record<
+          string,
+          string
+        >;
+        // Prefer highest quality mp3 (check 256kbps first, then 128kbps, then any available)
+        const preferredUrl =
+          encodedUrls["mp3_256kbps"] ||
+          encodedUrls["mp3_192kbps"] ||
+          encodedUrls["mp3_128kbps"] ||
+          Object.values(encodedUrls)[0];
+
+        if (preferredUrl) {
+          finalUrl = preferredUrl;
+          console.log(
+            `Using encoded audio URL for episode ${episodeId}: ${preferredUrl}`
+          );
+        }
+      } catch (error) {
+        console.warn(
+          `Failed to parse encodedAudioUrls for episode ${episodeId}:`,
+          error
+        );
+      }
+    }
+
     // Generate fresh pre-signed URL if we have the generator and URL contains an R2 key
-    if (this.presignedUrlGenerator && audioData.url.startsWith("r2://")) {
-      const key = audioData.url.replace("r2://", "");
+    if (this.presignedUrlGenerator && finalUrl.startsWith("r2://")) {
+      const key = finalUrl.replace("r2://", "");
       try {
         const signedUrl = await this.presignedUrlGenerator.generatePresignedUrl(
           "podcast-service-assets",
@@ -375,7 +407,10 @@ export class AudioService {
       }
     }
 
-    return audioData;
+    return {
+      ...audioData,
+      url: finalUrl,
+    };
   }
 
   async getR2Object(key: string): Promise<R2Object | null> {
@@ -547,6 +582,10 @@ export class AudioService {
     mimeType: string,
     totalChunks: number
   ) {
+    if (!this.bucket) {
+      throw new Error("R2 bucket not configured");
+    }
+
     const uploadId = uuidv4();
     const audioId = uuidv4();
     const r2Key = `audio/${showId}/${episodeId}/${audioId}/${fileName}`;
@@ -594,10 +633,16 @@ export class AudioService {
   }
 
   async uploadChunk(
+    showId: string,
+    episodeId: string,
     uploadId: string,
     chunkNumber: number,
     chunkData: ArrayBuffer
   ) {
+    if (!this.bucket) {
+      throw new Error("R2 bucket not configured");
+    }
+
     // Get upload state from Durable Object
     const session = this.getUploadSession(uploadId);
     const stateResponse = await session.fetch("https://stub/getState");
@@ -607,6 +652,24 @@ export class AudioService {
     const upload = (await stateResponse.json()) as MultipartUploadState;
     if (!upload) {
       throw new NotFoundError("Upload session not found or expired");
+    }
+
+    // Validate that the provided showId and episodeId match the upload session
+    if (upload.showId !== showId) {
+      throw new ValidationError(
+        `Show ID mismatch: expected ${upload.showId}, got ${showId}`
+      );
+    }
+    if (upload.episodeId !== episodeId) {
+      throw new ValidationError(
+        `Episode ID mismatch: expected ${upload.episodeId}, got ${episodeId}`
+      );
+    }
+
+    // Verify episode exists and caller has access (validates ownership)
+    const episode = await this.episodeRepo.findById(showId, episodeId);
+    if (!episode) {
+      throw new NotFoundError("Episode not found");
     }
 
     // Upload the chunk to R2 as a part
@@ -643,7 +706,15 @@ export class AudioService {
     };
   }
 
-  async completeMultipartUpload(showId: string, uploadId: string) {
+  async completeMultipartUpload(
+    showId: string,
+    episodeId: string,
+    uploadId: string
+  ) {
+    if (!this.bucket) {
+      throw new Error("R2 bucket not configured");
+    }
+
     // Get upload state from Durable Object
     const session = this.getUploadSession(uploadId);
     const stateResponse = await session.fetch("https://stub/getState");
@@ -655,9 +726,21 @@ export class AudioService {
       throw new NotFoundError("Upload session not found or expired");
     }
 
+    // Validate that the provided showId and episodeId match the upload session
+    if (upload.showId !== showId) {
+      throw new ValidationError(
+        `Show ID mismatch: expected ${upload.showId}, got ${showId}`
+      );
+    }
+    if (upload.episodeId !== episodeId) {
+      throw new ValidationError(
+        `Episode ID mismatch: expected ${upload.episodeId}, got ${episodeId}`
+      );
+    }
+
     // Check if all chunks are received
     if (upload.uploadedParts.length !== upload.totalChunks) {
-      throw new Error(
+      throw new ValidationError(
         `Missing chunks: received ${upload.uploadedParts.length} of ${upload.totalChunks}`
       );
     }
@@ -670,7 +753,7 @@ export class AudioService {
     // Verify all parts are sequential
     for (let i = 0; i < sortedParts.length; i++) {
       if (sortedParts[i].partNumber !== i + 1) {
-        throw new Error(`Missing part ${i + 1}`);
+        throw new ValidationError(`Missing part ${i + 1}`);
       }
     }
 
@@ -759,6 +842,10 @@ export class AudioService {
   }
 
   async abortMultipartUpload(uploadId: string) {
+    if (!this.bucket) {
+      throw new Error("R2 bucket not configured");
+    }
+
     // Get upload state from Durable Object
     const session = this.getUploadSession(uploadId);
     const stateResponse = await session.fetch("https://stub/getState");

@@ -7,9 +7,9 @@ import {
   AudioParamsSchema,
   InitiateMultipartUploadSchema,
   MultipartUploadResponseSchema,
-  CompleteMultipartUploadSchema,
   ChunkParamsSchema,
   ChunkUploadResponseSchema,
+  MultipartUploadParamsSchema,
 } from "./schemas";
 import { AudioService } from "./service";
 import { NotFoundError } from "../common/errors";
@@ -415,12 +415,15 @@ export function createAudioRoutes(audioService: AudioService) {
       security: [{ Bearer: ["podcast:write"] }],
     }),
     async (ctx) => {
-      const { upload_id, chunk_number } = ctx.req.valid("param");
+      const { show_id, episode_id, upload_id, chunk_number } =
+        ctx.req.valid("param");
 
       // Get the raw body as ArrayBuffer
       const chunkData = await ctx.req.arrayBuffer();
 
       const result = await audioService.uploadChunk(
+        show_id,
+        episode_id,
         upload_id,
         chunk_number,
         chunkData
@@ -436,19 +439,12 @@ export function createAudioRoutes(audioService: AudioService) {
   app.openapi(
     createRoute({
       method: "post",
-      path: "/shows/{show_id}/episodes/{episode_id}/audio/multipart/complete",
+      path: "/shows/{show_id}/episodes/{episode_id}/audio/multipart/{upload_id}/complete",
       tags: ["audio"],
       summary: "Complete multipart audio upload",
       description: "Finalize the multipart upload and create the audio file",
       request: {
-        params: AudioParamsSchema,
-        body: {
-          content: {
-            "application/json": {
-              schema: CompleteMultipartUploadSchema,
-            },
-          },
-        },
+        params: MultipartUploadParamsSchema,
       },
       responses: {
         201: {
@@ -463,12 +459,12 @@ export function createAudioRoutes(audioService: AudioService) {
       security: [{ Bearer: ["podcast:write"] }],
     }),
     async (ctx) => {
-      const { show_id } = ctx.req.valid("param");
-      const { uploadId } = ctx.req.valid("json");
+      const { show_id, episode_id, upload_id } = ctx.req.valid("param");
 
       const result = await audioService.completeMultipartUpload(
         show_id,
-        uploadId
+        episode_id,
+        upload_id
       );
 
       return ctx.json(result, 201);

@@ -44,6 +44,12 @@ export const AudioParamsSchema = z.object({
   episode_id: z.string().uuid(),
 });
 
+export const MultipartUploadParamsSchema = z.object({
+  show_id: z.string().uuid(),
+  episode_id: z.string().uuid(),
+  upload_id: z.string(),
+});
+
 export const ChunkParamsSchema = z.object({
   show_id: z.string().uuid(),
   episode_id: z.string().uuid(),
