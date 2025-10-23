@@ -87,6 +87,7 @@ app.post("/metadata", async (c) => {
       channels: audioProps.channels,
       sampleRate: audioProps.sampleRate,
       inputBitrate: audioProps.inputBitrate,
+      chapters: audioProps.chapters || [],
     });
   } catch (error) {
     console.error("Metadata error:", error);
@@ -504,8 +505,29 @@ function getAudioProperties(inputUrl) {
         const inputBitrate = parseInt(audioStream.bit_rate) || null;
         const duration = parseFloat(metadata.format.duration) || null;
 
+        // Extract chapters from metadata
+        const chapters = [];
+        if (metadata.chapters && Array.isArray(metadata.chapters)) {
+          for (const chapter of metadata.chapters) {
+            const startTime = parseFloat(chapter.start_time) || 0;
+            const endTime = parseFloat(chapter.end_time) || null;
+            const title =
+              chapter.tags?.title || `Chapter ${chapters.length + 1}`;
+
+            chapters.push({
+              startTime,
+              endTime,
+              title,
+              url: chapter.tags?.url || undefined,
+              image: chapter.tags?.image || undefined,
+              toc: true, // assume all extracted chapters should be in TOC
+            });
+          }
+          console.log(`Extracted ${chapters.length} chapters from audio file`);
+        }
+
         console.log(
-          `Audio properties detected: ${channels} channels, ${sampleRate}Hz sample rate, duration: ${duration}s`
+          `Audio properties detected: ${channels} channels, ${sampleRate}Hz sample rate, duration: ${duration}s, chapters: ${chapters.length}`
         );
 
         resolve({
@@ -513,6 +535,7 @@ function getAudioProperties(inputUrl) {
           sampleRate,
           inputBitrate,
           duration,
+          chapters,
           isMono: channels === 1,
           isStereo: channels === 2,
         });

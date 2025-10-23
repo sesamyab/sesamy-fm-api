@@ -28,4 +28,10 @@ export type PodcastEventType =
   | "creative.deleted"
   | "creative.audio.uploaded"
   | "creative.video.uploaded"
-  | "creative.image.uploaded";
+  | "creative.image.uploaded"
+  | "ad_marker.created"
+  | "ad_marker.updated"
+  | "ad_marker.deleted"
+  | "chapter.created"
+  | "chapter.updated"
+  | "chapter.deleted";

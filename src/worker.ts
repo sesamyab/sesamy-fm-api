@@ -34,7 +34,9 @@ export default {
       env.AUTH0_CLIENT_ID,
       env.AUTH0_CLIENT_SECRET,
       env.TTS_GENERATION_WORKFLOW,
-      env.ENCODING_WORKFLOW
+      env.ENCODING_WORKFLOW,
+      env.ENCODING_CONTAINER,
+      env.MULTIPART_UPLOAD_SESSION
     ); // Set environment variables for JWT
     if (env.JWT_SECRET && !process.env.JWT_SECRET) {
       process.env.JWT_SECRET = env.JWT_SECRET;
@@ -80,7 +82,7 @@ export default {
   },
 };
 
-// Export the EncodingContainer, AudioProcessingWorkflow, ImportShowWorkflow, TtsGenerationWorkflow, TranscriptionWorkflow, and EncodingWorkflow for Cloudflare Workers
+// Export the EncodingContainer, AudioProcessingWorkflow, ImportShowWorkflow, TtsGenerationWorkflow, TranscriptionWorkflow, EncodingWorkflow, and MultipartUploadSession for Cloudflare Workers
 export {
   EncodingContainer,
   AudioProcessingWorkflow,
@@ -89,3 +91,4 @@ export {
   TranscriptionWorkflow,
   EncodingWorkflow,
 };
+export { MultipartUploadSession } from "./audio/multipart-upload-session";

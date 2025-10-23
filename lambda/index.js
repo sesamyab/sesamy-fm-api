@@ -38,6 +38,10 @@ exports.handler = async (event) => {
       return await handleEncode(body);
     }
 
+    if (path === "/metadata") {
+      return await handleMetadata(body);
+    }
+
     return response(404, { success: false, error: "Not found" });
   } catch (error) {
     console.error("Handler error:", error);
@@ -198,6 +202,57 @@ async function handleEncode(body) {
   }
 }
 
+// Handle metadata extraction request
+async function handleMetadata(body) {
+  const { audioUrl } = body;
+
+  if (!audioUrl) {
+    return response(400, {
+      success: false,
+      error: "Missing required field: audioUrl",
+    });
+  }
+
+  const jobId = Date.now().toString();
+  const inputFile = `/tmp/input_metadata_${jobId}`;
+
+  try {
+    console.log(`[METADATA ${jobId}] Downloading from ${audioUrl}`);
+    const inputResponse = await fetch(audioUrl);
+    if (!inputResponse.ok) {
+      throw new Error(
+        `Failed to download: ${inputResponse.status} ${inputResponse.statusText}`
+      );
+    }
+    const inputBuffer = Buffer.from(await inputResponse.arrayBuffer());
+    await fs.writeFile(inputFile, inputBuffer);
+
+    // Get metadata
+    const metadata = await getAudioMetadata(inputFile);
+    console.log(`[METADATA ${jobId}] Extracted:`, metadata);
+
+    // Cleanup
+    await cleanup([inputFile]);
+
+    return response(200, {
+      success: true,
+      duration: metadata.duration,
+      channels: metadata.channels,
+      sampleRate: metadata.sampleRate,
+      inputBitrate: metadata.inputBitrate,
+      chapters: metadata.chapters || [],
+    });
+  } catch (error) {
+    console.error(`[METADATA ${jobId}] Error:`, error);
+    await cleanup([inputFile]);
+
+    return response(500, {
+      success: false,
+      error: error.message,
+    });
+  }
+}
+
 // Get audio metadata using ffprobe via fluent-ffmpeg
 async function getAudioMetadata(filePath) {
   try {
@@ -211,15 +266,42 @@ async function getAudioMetadata(filePath) {
     const audioStream =
       metadata.streams?.find((s) => s.codec_type === "audio") || {};
 
+    // Extract chapters from metadata
+    const chapters = [];
+    if (metadata.chapters && Array.isArray(metadata.chapters)) {
+      for (const chapter of metadata.chapters) {
+        const startTime = parseFloat(chapter.start_time) || 0;
+        const endTime = parseFloat(chapter.end_time) || null;
+        const title = chapter.tags?.title || `Chapter ${chapters.length + 1}`;
+
+        chapters.push({
+          startTime,
+          endTime,
+          title,
+          url: chapter.tags?.url || undefined,
+          image: chapter.tags?.image || undefined,
+          toc: true,
+        });
+      }
+      console.log(`Extracted ${chapters.length} chapters from audio file`);
+    }
+
     return {
       duration: parseFloat(metadata.format?.duration || 0),
       channels: parseInt(audioStream.channels || 2),
       sampleRate: parseInt(audioStream.sample_rate || 44100),
       inputBitrate: parseInt(metadata.format?.bit_rate || 0) / 1000,
+      chapters,
     };
   } catch (error) {
     console.error("Metadata extraction error:", error);
-    return { duration: 0, channels: 2, sampleRate: 44100, inputBitrate: 0 };
+    return {
+      duration: 0,
+      channels: 2,
+      sampleRate: 44100,
+      inputBitrate: 0,
+      chapters: [],
+    };
   }
 }
 

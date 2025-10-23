@@ -12,6 +12,9 @@ import { relations } from "drizzle-orm";
 export const organizations = sqliteTable("organizations", {
   id: text("id").primaryKey(), // This will be the Auth0 organization ID
   name: text("name").notNull(),
+  ttsModel: text("tts_model"), // TTS model/algorithm to use (e.g., "@cf/openai/whisper", "openai-tts-1")
+  sttModel: text("stt_model"), // STT model/algorithm to use (e.g., "@cf/openai/whisper", "whisper-large")
+  autoTts: integer("auto_tts", { mode: "boolean" }).notNull().default(false), // Automatic TTS generation
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -28,6 +31,9 @@ export const shows = sqliteTable("shows", {
   language: text("language"), // Language code (e.g. "en", "es")
   categories: text("categories"), // JSON string containing array of categories
   author: text("author"), // Show author/creator
+  ttsModel: text("tts_model"), // TTS model/algorithm to use (overrides organization default)
+  sttModel: text("stt_model"), // STT model/algorithm to use (overrides organization default)
+  autoTts: integer("auto_tts", { mode: "boolean" }), // Automatic TTS generation (overrides organization default, optional)
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });
@@ -42,7 +48,7 @@ export const episodes = sqliteTable("episodes", {
     .notNull()
     .references(() => shows.id, { onDelete: "cascade" }),
   title: text("title").notNull(),
-  description: text("description").notNull(),
+  description: text("description"),
   imageUrl: text("image_url"),
   audioUrl: text("audio_url"),
   transcriptUrl: text("transcript_url"),
@@ -58,6 +64,8 @@ export const episodes = sqliteTable("episodes", {
   subtitle: text("subtitle"), // iTunes subtitle
   explicit: integer("explicit", { mode: "boolean" }), // Explicit content flag
   keywords: text("keywords"), // JSON string containing array of keywords/tags
+  adMarkers: text("ad_markers"), // JSON string containing array of ad marker objects
+  chapters: text("chapters"), // JSON string containing array of chapter objects
   createdAt: text("created_at").notNull(),
   updatedAt: text("updated_at").notNull(),
 });

@@ -6,16 +6,16 @@ import { registerComponent } from "hono-openapi-middlewares";
 
 import { errorHandler } from "./common/errors";
 import type { AppContext } from "./auth/types";
-import { registerHealthRoutes } from "./health/routes";
-import { registerShowRoutes } from "./shows/routes";
-import { registerEpisodeRoutes } from "./episodes/routes";
-import { registerAudioRoutes } from "./audio/routes";
-import { registerFeedRoutes } from "./feed/routes";
+import { createHealthRoutes } from "./health/routes";
+import { createShowRoutes } from "./shows/routes";
+import { createEpisodeRoutes } from "./episodes/routes";
+import { createAudioRoutes } from "./audio/routes";
+import { createFeedRoutes } from "./feed/routes";
 import { createTaskRoutes } from "./tasks/routes";
 import { createWorkflowRoutes } from "./workflows/routes";
 import storageRoutes from "./storage/routes";
 import { createCampaignRoutes } from "./campaigns/routes";
-import { registerOrganizationRoutes } from "./organizations/routes";
+import { createOrganizationRoutes } from "./organizations/routes";
 
 // Services
 import { EventPublisher } from "./events/publisher";
@@ -45,7 +45,9 @@ export function createApp(
   auth0ClientId?: string,
   auth0ClientSecret?: string,
   ttsGenerationWorkflow?: Workflow,
-  encodingWorkflow?: Workflow
+  encodingWorkflow?: Workflow,
+  encodingContainer?: DurableObjectNamespace,
+  multipartUploadSession?: DurableObjectNamespace
 ) {
   const app = new OpenAPIHono<AppContext>();
 
@@ -77,7 +79,9 @@ export function createApp(
     r2SecretAccessKey,
     r2Endpoint,
     audioProcessingWorkflow,
-    encodingWorkflow
+    encodingWorkflow,
+    encodingContainer,
+    multipartUploadSession
   );
 
   const imageService =
@@ -175,32 +179,36 @@ export function createApp(
   app.route("/storage", storageRoutes);
 
   // Health routes (no auth required)
-  registerHealthRoutes(app, database);
+  app.route("/", createHealthRoutes(database));
 
   // RSS feeds don't require authentication (public access)
-  registerFeedRoutes(app, showService, episodeRepository);
+  app.route("/", createFeedRoutes(showService, episodeRepository));
 
   // Register organization routes
-  registerOrganizationRoutes(app, organizationService);
+  app.route("/", createOrganizationRoutes(organizationService));
 
   // Register protected API routes
-  registerShowRoutes(
-    app,
-    showService,
-    audioService,
-    imageService,
-    database,
-    importShowWorkflow
+  app.route(
+    "/",
+    createShowRoutes(
+      showService,
+      audioService,
+      imageService,
+      database,
+      importShowWorkflow
+    )
   );
-  registerEpisodeRoutes(
-    app,
-    episodeService,
-    audioService,
-    imageService,
-    bucket,
-    ttsGenerationWorkflow
+  app.route(
+    "/",
+    createEpisodeRoutes(
+      episodeService,
+      audioService,
+      imageService,
+      bucket,
+      ttsGenerationWorkflow
+    )
   );
-  registerAudioRoutes(app, audioService);
+  app.route("/", createAudioRoutes(audioService));
   app.route("/", createTaskRoutes(database));
   app.route("/", createWorkflowRoutes());
   app.route(

@@ -2,8 +2,13 @@ import { v4 as uuidv4 } from "uuid";
 import { AudioRepository } from "./repository";
 import { EventPublisher } from "../events/publisher";
 import { EpisodeRepository } from "../episodes/repository";
-import { NotFoundError } from "../common/errors";
+import { NotFoundError, ValidationError } from "../common/errors";
 import { R2PreSignedUrlGenerator } from "../utils";
+import {
+  EncodingService,
+  type EncodingServiceConfig,
+} from "../encoding/service";
+import type { MultipartUploadState } from "./multipart-upload-session";
 
 export class AudioService {
   private audioRepo: AudioRepository;
@@ -14,6 +19,8 @@ export class AudioService {
   private bucket: R2Bucket;
   private presignedUrlGenerator: R2PreSignedUrlGenerator | null = null;
   private database?: D1Database;
+  private encodingService?: EncodingService;
+  private multipartUploadSession?: DurableObjectNamespace;
 
   constructor(
     database?: D1Database,
@@ -23,7 +30,9 @@ export class AudioService {
     r2SecretAccessKey?: string,
     r2Endpoint?: string,
     audioProcessingWorkflow?: Workflow,
-    encodingWorkflow?: Workflow
+    encodingWorkflow?: Workflow,
+    encodingContainer?: DurableObjectNamespace,
+    multipartUploadSession?: DurableObjectNamespace
   ) {
     this.database = database;
     this.audioRepo = new AudioRepository(database);
@@ -32,6 +41,7 @@ export class AudioService {
     this.audioProcessingWorkflow = audioProcessingWorkflow;
     this.encodingWorkflow = encodingWorkflow;
     this.bucket = bucket as R2Bucket;
+    this.multipartUploadSession = multipartUploadSession;
 
     console.log(
       `AudioService initialized with workflows: audioProcessing=${!!audioProcessingWorkflow}, encoding=${!!encodingWorkflow}`
@@ -51,6 +61,18 @@ export class AudioService {
       console.log(
         `R2 credentials not available - r2AccessKeyId: ${!!r2AccessKeyId}, r2SecretAccessKey: ${!!r2SecretAccessKey}`
       );
+    }
+
+    // Initialize encoding service if container is available
+    if (encodingContainer) {
+      const encodingConfig: EncodingServiceConfig = {
+        type: "cloudflare",
+        cloudflare: {
+          container: encodingContainer,
+        },
+      };
+      this.encodingService = new EncodingService(encodingConfig);
+      console.log("Encoding service initialized for chapter extraction");
     }
   }
 
@@ -78,10 +100,11 @@ export class AudioService {
     let signedUrl: string;
 
     if (this.bucket) {
-      // Upload to R2 bucket
+      // Upload to R2 bucket with cache headers
       await this.bucket.put(key, file.buffer, {
         httpMetadata: {
           contentType: file.mimeType,
+          cacheControl: "public, max-age=31536000, immutable",
         },
       });
 
@@ -183,6 +206,11 @@ export class AudioService {
         }`
       );
     }
+
+    // Extract chapters from audio file (non-blocking, optional)
+    this.extractAndUpdateChapters(showId, episodeId, url).catch((error) => {
+      console.error("Chapter extraction failed (non-critical):", error);
+    });
 
     // Return upload info with signed URL for immediate use
     return {
@@ -328,9 +356,41 @@ export class AudioService {
       return null;
     }
 
+    // Check if episode has encoded audio URLs
+    const episode = await this.episodeRepo.findById(showId, episodeId);
+    let finalUrl = audioData.url;
+
+    // Prefer encoded audio if available
+    if (episode?.encodedAudioUrls) {
+      try {
+        const encodedUrls = JSON.parse(episode.encodedAudioUrls) as Record<
+          string,
+          string
+        >;
+        // Prefer highest quality mp3 (check 256kbps first, then 128kbps, then any available)
+        const preferredUrl =
+          encodedUrls["mp3_256kbps"] ||
+          encodedUrls["mp3_192kbps"] ||
+          encodedUrls["mp3_128kbps"] ||
+          Object.values(encodedUrls)[0];
+
+        if (preferredUrl) {
+          finalUrl = preferredUrl;
+          console.log(
+            `Using encoded audio URL for episode ${episodeId}: ${preferredUrl}`
+          );
+        }
+      } catch (error) {
+        console.warn(
+          `Failed to parse encodedAudioUrls for episode ${episodeId}:`,
+          error
+        );
+      }
+    }
+
     // Generate fresh pre-signed URL if we have the generator and URL contains an R2 key
-    if (this.presignedUrlGenerator && audioData.url.startsWith("r2://")) {
-      const key = audioData.url.replace("r2://", "");
+    if (this.presignedUrlGenerator && finalUrl.startsWith("r2://")) {
+      const key = finalUrl.replace("r2://", "");
       try {
         const signedUrl = await this.presignedUrlGenerator.generatePresignedUrl(
           "podcast-service-assets",
@@ -347,7 +407,10 @@ export class AudioService {
       }
     }
 
-    return audioData;
+    return {
+      ...audioData,
+      url: finalUrl,
+    };
   }
 
   async getR2Object(key: string): Promise<R2Object | null> {
@@ -500,5 +563,395 @@ export class AudioService {
     );
 
     return task;
+  }
+
+  // Multipart upload support using R2's native multipart API with Durable Object state
+  private getUploadSession(uploadId: string) {
+    if (!this.multipartUploadSession) {
+      throw new Error("Multipart upload session not configured");
+    }
+    const id = this.multipartUploadSession.idFromName(uploadId);
+    return this.multipartUploadSession.get(id);
+  }
+
+  async initiateMultipartUpload(
+    showId: string,
+    episodeId: string,
+    fileName: string,
+    fileSize: number,
+    mimeType: string,
+    totalChunks: number
+  ) {
+    if (!this.bucket) {
+      throw new Error("R2 bucket not configured");
+    }
+
+    const uploadId = uuidv4();
+    const audioId = uuidv4();
+    const r2Key = `audio/${showId}/${episodeId}/${audioId}/${fileName}`;
+
+    // Initiate R2 multipart upload with cache headers
+    const r2Upload = await this.bucket.createMultipartUpload(r2Key, {
+      httpMetadata: {
+        contentType: mimeType,
+        cacheControl: "public, max-age=31536000, immutable",
+      },
+    });
+
+    // Store session state in Durable Object
+    const session = this.getUploadSession(uploadId);
+    const response = await session.fetch("https://stub/initialize", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        uploadId,
+        episodeId,
+        showId,
+        audioId,
+        fileName,
+        fileSize,
+        mimeType,
+        r2Key,
+        r2UploadId: r2Upload.uploadId,
+        totalChunks,
+        uploadedParts: [],
+        createdAt: Date.now(),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error(
+        `Failed to initialize upload session: ${await response.text()}`
+      );
+    }
+
+    return {
+      uploadId,
+      fileName,
+      totalChunks,
+    };
+  }
+
+  async uploadChunk(
+    showId: string,
+    episodeId: string,
+    uploadId: string,
+    chunkNumber: number,
+    chunkData: ArrayBuffer
+  ) {
+    if (!this.bucket) {
+      throw new Error("R2 bucket not configured");
+    }
+
+    // Get upload state from Durable Object
+    const session = this.getUploadSession(uploadId);
+    const stateResponse = await session.fetch("https://stub/getState");
+    if (!stateResponse.ok) {
+      throw new NotFoundError("Upload session not found or expired");
+    }
+    const upload = (await stateResponse.json()) as MultipartUploadState;
+    if (!upload) {
+      throw new NotFoundError("Upload session not found or expired");
+    }
+
+    // Validate that the provided showId and episodeId match the upload session
+    if (upload.showId !== showId) {
+      throw new ValidationError(
+        `Show ID mismatch: expected ${upload.showId}, got ${showId}`
+      );
+    }
+    if (upload.episodeId !== episodeId) {
+      throw new ValidationError(
+        `Episode ID mismatch: expected ${upload.episodeId}, got ${episodeId}`
+      );
+    }
+
+    // Verify episode exists and caller has access (validates ownership)
+    const episode = await this.episodeRepo.findById(showId, episodeId);
+    if (!episode) {
+      throw new NotFoundError("Episode not found");
+    }
+
+    // Upload the chunk to R2 as a part
+    const r2Upload = this.bucket.resumeMultipartUpload(
+      upload.r2Key,
+      upload.r2UploadId
+    );
+    const uploadedPart = await r2Upload.uploadPart(chunkNumber, chunkData);
+
+    // Store the part information in Durable Object (handles retries automatically)
+    const addPartResponse = await session.fetch("https://stub/addPart", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        partNumber: chunkNumber,
+        etag: uploadedPart.etag,
+      }),
+    });
+
+    if (!addPartResponse.ok) {
+      throw new Error(`Failed to store part: ${await addPartResponse.text()}`);
+    }
+
+    const { received, total } = (await addPartResponse.json()) as {
+      received: number;
+      total: number;
+    };
+
+    return {
+      uploadId,
+      chunkNumber,
+      received,
+      total,
+    };
+  }
+
+  async completeMultipartUpload(
+    showId: string,
+    episodeId: string,
+    uploadId: string
+  ) {
+    if (!this.bucket) {
+      throw new Error("R2 bucket not configured");
+    }
+
+    // Get upload state from Durable Object
+    const session = this.getUploadSession(uploadId);
+    const stateResponse = await session.fetch("https://stub/getState");
+    if (!stateResponse.ok) {
+      throw new NotFoundError("Upload session not found or expired");
+    }
+    const upload = (await stateResponse.json()) as MultipartUploadState;
+    if (!upload) {
+      throw new NotFoundError("Upload session not found or expired");
+    }
+
+    // Validate that the provided showId and episodeId match the upload session
+    if (upload.showId !== showId) {
+      throw new ValidationError(
+        `Show ID mismatch: expected ${upload.showId}, got ${showId}`
+      );
+    }
+    if (upload.episodeId !== episodeId) {
+      throw new ValidationError(
+        `Episode ID mismatch: expected ${upload.episodeId}, got ${episodeId}`
+      );
+    }
+
+    // Check if all chunks are received
+    if (upload.uploadedParts.length !== upload.totalChunks) {
+      throw new ValidationError(
+        `Missing chunks: received ${upload.uploadedParts.length} of ${upload.totalChunks}`
+      );
+    }
+
+    // Sort parts by part number
+    const sortedParts = upload.uploadedParts.sort(
+      (a, b) => a.partNumber - b.partNumber
+    );
+
+    // Verify all parts are sequential
+    for (let i = 0; i < sortedParts.length; i++) {
+      if (sortedParts[i].partNumber !== i + 1) {
+        throw new ValidationError(`Missing part ${i + 1}`);
+      }
+    }
+
+    // Complete the R2 multipart upload
+    const r2Upload = this.bucket.resumeMultipartUpload(
+      upload.r2Key,
+      upload.r2UploadId
+    );
+    await r2Upload.complete(
+      sortedParts.map((p) => ({ partNumber: p.partNumber, etag: p.etag }))
+    );
+
+    // Verify episode exists
+    const episode = await this.episodeRepo.findById(
+      upload.showId,
+      upload.episodeId
+    );
+    if (!episode) {
+      throw new NotFoundError("Episode not found");
+    }
+
+    // Use the audioId stored in the upload session
+    const audioId = upload.audioId;
+
+    // Store the R2 key with a special prefix for database storage
+    const url = `r2://${upload.r2Key}`;
+
+    // Generate URL for immediate use and episode update
+    let signedUrl: string;
+    if (this.presignedUrlGenerator) {
+      try {
+        // Use direct URL with custom domain if available
+        const directUrl = this.presignedUrlGenerator.generateDirectUrl(
+          "podcast-service-assets",
+          upload.r2Key
+        );
+        signedUrl = directUrl || url; // Fall back to r2:// URL if no custom domain
+      } catch (error) {
+        console.warn("Failed to generate URL, using r2:// fallback:", error);
+        signedUrl = url;
+      }
+    } else {
+      console.warn("No R2 credentials available for URL generation");
+      signedUrl = url;
+    }
+
+    // Save audio metadata
+    const audioUpload = await this.audioRepo.create({
+      id: audioId,
+      episodeId: upload.episodeId,
+      fileName: upload.fileName,
+      fileSize: upload.fileSize,
+      mimeType: upload.mimeType,
+      url: url,
+    });
+
+    // Update episode with audio URL
+    await this.episodeRepo.updateByIdOnly(upload.episodeId, {
+      audioUrl: url,
+    });
+
+    // Publish event
+    await this.eventPublisher.publish(
+      "audio.uploaded",
+      {
+        ...audioUpload,
+        url: signedUrl,
+      },
+      audioUpload.id
+    );
+
+    // Extract chapters from audio file (non-blocking, optional)
+    this.extractAndUpdateChapters(upload.showId, upload.episodeId, url).catch(
+      (error) => {
+        console.error("Chapter extraction failed (non-critical):", error);
+      }
+    );
+
+    // Clean up the multipart upload session from Durable Object
+    await session.fetch("https://stub/delete", { method: "POST" });
+
+    return {
+      ...audioUpload,
+      url: signedUrl,
+    };
+  }
+
+  async abortMultipartUpload(uploadId: string) {
+    if (!this.bucket) {
+      throw new Error("R2 bucket not configured");
+    }
+
+    // Get upload state from Durable Object
+    const session = this.getUploadSession(uploadId);
+    const stateResponse = await session.fetch("https://stub/getState");
+    if (!stateResponse.ok) {
+      throw new NotFoundError("Upload session not found or expired");
+    }
+    const upload = (await stateResponse.json()) as MultipartUploadState;
+    if (!upload) {
+      throw new NotFoundError("Upload session not found or expired");
+    }
+
+    // Abort the R2 upload
+    const r2Upload = this.bucket.resumeMultipartUpload(
+      upload.r2Key,
+      upload.r2UploadId
+    );
+    await r2Upload.abort();
+
+    // Clean up the session from Durable Object
+    await session.fetch("https://stub/delete", { method: "POST" });
+
+    return { success: true };
+  }
+
+  async getMultipartUploadStatus(uploadId: string) {
+    // Get upload state from Durable Object
+    const session = this.getUploadSession(uploadId);
+    const stateResponse = await session.fetch("https://stub/getState");
+    if (!stateResponse.ok) {
+      return null;
+    }
+    const upload = (await stateResponse.json()) as MultipartUploadState | null;
+    if (!upload) {
+      return null;
+    }
+
+    return {
+      uploadId: upload.uploadId,
+      fileName: upload.fileName,
+      fileSize: upload.fileSize,
+      totalChunks: upload.totalChunks,
+      receivedChunks: upload.uploadedParts.length,
+      complete: upload.uploadedParts.length === upload.totalChunks,
+    };
+  }
+
+  /**
+   * Extract chapters from audio file and update episode
+   */
+  async extractAndUpdateChapters(
+    showId: string,
+    episodeId: string,
+    audioR2Key: string
+  ) {
+    if (!this.encodingService) {
+      console.warn(
+        "Encoding service not available, skipping chapter extraction"
+      );
+      return;
+    }
+
+    try {
+      console.log(`Extracting chapters from audio for episode ${episodeId}`);
+
+      // Strip r2:// prefix if present
+      const actualR2Key = audioR2Key.startsWith("r2://")
+        ? audioR2Key.substring(5)
+        : audioR2Key;
+
+      // Generate signed URL for the audio file
+      let audioUrl: string;
+      if (this.presignedUrlGenerator) {
+        audioUrl = await this.presignedUrlGenerator.generatePresignedUrl(
+          "podcast-service-assets",
+          actualR2Key,
+          3600 // 1 hour
+        );
+      } else {
+        throw new Error("Cannot generate URL for chapter extraction");
+      }
+
+      // Get metadata including chapters
+      const metadata = await this.encodingService.getMetadata({ audioUrl });
+
+      if (!metadata.success) {
+        console.warn(`Failed to extract metadata: ${metadata.error}`);
+        return;
+      }
+
+      // If chapters were found, update the episode
+      if (metadata.chapters && metadata.chapters.length > 0) {
+        console.log(
+          `Found ${metadata.chapters.length} chapters, updating episode`
+        );
+        await this.episodeRepo.update(showId, episodeId, {
+          chapters: metadata.chapters,
+        });
+        console.log(
+          `Updated episode ${episodeId} with ${metadata.chapters.length} chapters`
+        );
+      } else {
+        console.log(`No chapters found in audio file`);
+      }
+    } catch (error) {
+      console.error(`Failed to extract chapters: ${error}`);
+      // Don't throw - chapter extraction is optional
+    }
   }
 }

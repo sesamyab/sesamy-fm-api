@@ -97,6 +97,7 @@ export class ImageService {
       await this.bucket.put(key, arrayBuffer, {
         httpMetadata: {
           contentType: file.type,
+          cacheControl: "public, max-age=31536000, immutable",
         },
       });
       console.log(`[ImageService] R2 upload successful`);
@@ -223,6 +224,7 @@ export class ImageService {
     await this.bucket.put(key, arrayBuffer, {
       httpMetadata: {
         contentType: file.type,
+        cacheControl: "public, max-age=31536000, immutable",
       },
     });
 

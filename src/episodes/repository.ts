@@ -52,6 +52,8 @@ export class EpisodeRepository {
       showId,
       published: false,
       publishedAt: null,
+      adMarkers: data.adMarkers ? JSON.stringify(data.adMarkers) : null,
+      chapters: data.chapters ? JSON.stringify(data.chapters) : null,
       createdAt: now,
       updatedAt: now,
     };
@@ -72,10 +74,21 @@ export class EpisodeRepository {
       updatedAt: new Date().toISOString(),
     };
 
+    // Stringify JSON fields if they're provided as arrays
+    const dataToSet: any = { ...data };
+    if (data.adMarkers !== undefined) {
+      dataToSet.adMarkers = data.adMarkers
+        ? JSON.stringify(data.adMarkers)
+        : null;
+    }
+    if (data.chapters !== undefined) {
+      dataToSet.chapters = data.chapters ? JSON.stringify(data.chapters) : null;
+    }
+
     await this.db
       .update(episodes)
       .set({
-        ...data,
+        ...dataToSet,
         updatedAt: updatedEpisode.updatedAt,
       })
       .where(and(eq(episodes.showId, showId), eq(episodes.id, episodeId)));
@@ -95,10 +108,21 @@ export class EpisodeRepository {
       updatedAt: new Date().toISOString(),
     };
 
+    // Stringify JSON fields if they're provided as arrays
+    const dataToSet: any = { ...data };
+    if (data.adMarkers !== undefined) {
+      dataToSet.adMarkers = data.adMarkers
+        ? JSON.stringify(data.adMarkers)
+        : null;
+    }
+    if (data.chapters !== undefined) {
+      dataToSet.chapters = data.chapters ? JSON.stringify(data.chapters) : null;
+    }
+
     await this.db
       .update(episodes)
       .set({
-        ...data,
+        ...dataToSet,
         updatedAt: updatedEpisode.updatedAt,
       })
       .where(eq(episodes.id, episodeId));

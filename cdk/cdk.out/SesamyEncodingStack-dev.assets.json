@@ -1,17 +1,17 @@
 {
   "version": "34.0.0",
   "files": {
-    "dd551305b7af5f1ef5484eabdd725fd99ab40a22f601675264b10bafd880d6e3": {
+    "f4621cfa879db10ef12826f593b8c4ddc5d2f5bda111ce7ce4d01dd50f3f5c79": {
       "source": {
         "path": "SesamyEncodingStack-dev.template.json",
         "packaging": "file"
       },
       "destinations": {
-        "current_account-us-east-1": {
-          "bucketName": "cdk-hnb659fds-assets-${AWS::AccountId}-us-east-1",
-          "objectKey": "dd551305b7af5f1ef5484eabdd725fd99ab40a22f601675264b10bafd880d6e3.json",
+        "610396205502-us-east-1": {
+          "bucketName": "cdk-hnb659fds-assets-610396205502-us-east-1",
+          "objectKey": "f4621cfa879db10ef12826f593b8c4ddc5d2f5bda111ce7ce4d01dd50f3f5c79.json",
           "region": "us-east-1",
-          "assumeRoleArn": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cdk-hnb659fds-file-publishing-role-${AWS::AccountId}-us-east-1"
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::610396205502:role/cdk-hnb659fds-file-publishing-role-610396205502-us-east-1"
         }
       }
     }

@@ -3,7 +3,6 @@ import * as lambda from "aws-cdk-lib/aws-lambda";
 import * as ecr from "aws-cdk-lib/aws-ecr";
 import * as iam from "aws-cdk-lib/aws-iam";
 import * as logs from "aws-cdk-lib/aws-logs";
-import * as apigateway from "aws-cdk-lib/aws-apigateway";
 import { Construct } from "constructs";
 
 export interface EncodingStackProps extends cdk.StackProps {
@@ -14,7 +13,6 @@ export class EncodingStack extends cdk.Stack {
   public readonly ecrRepository: ecr.IRepository;
   public readonly lambdaFunction: lambda.Function;
   public readonly functionUrl: lambda.FunctionUrl;
-  public readonly apiGateway: apigateway.RestApi;
 
   constructor(scope: Construct, id: string, props: EncodingStackProps) {
     super(scope, id, props);
@@ -83,48 +81,6 @@ export class EncodingStack extends cdk.Stack {
       },
     });
 
-    // API Gateway for additional features (custom domain, throttling, etc.)
-    this.apiGateway = new apigateway.RestApi(this, "EncodingApi", {
-      restApiName: `sesamy-encoding-api-${environment}`,
-      description: `FFmpeg Encoding Service API - ${environment}`,
-
-      // CORS configuration
-      defaultCorsPreflightOptions: {
-        allowOrigins: apigateway.Cors.ALL_ORIGINS,
-        allowMethods: apigateway.Cors.ALL_METHODS,
-        allowHeaders: ["Content-Type", "Authorization"],
-      },
-
-      // Deploy automatically
-      deploy: true,
-      deployOptions: {
-        stageName: environment,
-        loggingLevel: apigateway.MethodLoggingLevel.INFO,
-        dataTraceEnabled: true,
-      },
-    });
-
-    // Lambda integration for API Gateway
-    const lambdaIntegration = new apigateway.LambdaIntegration(
-      this.lambdaFunction,
-      {
-        requestTemplates: { "application/json": '{ "statusCode": "200" }' },
-      }
-    );
-
-    // Add proxy resource to handle all paths
-    const proxyResource = this.apiGateway.root.addResource("{proxy+}");
-    proxyResource.addMethod("ANY", lambdaIntegration);
-
-    // Add root method
-    this.apiGateway.root.addMethod("ANY", lambdaIntegration);
-
-    // Grant API Gateway permission to invoke Lambda
-    this.lambdaFunction.addPermission("ApiGatewayInvoke", {
-      principal: new iam.ServicePrincipal("apigateway.amazonaws.com"),
-      sourceArn: this.apiGateway.arnForExecuteApi(),
-    });
-
     // CloudWatch Dashboard (optional)
     const dashboard = new cdk.aws_cloudwatch.Dashboard(
       this,
@@ -169,12 +125,6 @@ export class EncodingStack extends cdk.Stack {
       value: this.functionUrl.url,
       description: "Lambda Function URL",
       exportName: `sesamy-encoding-url-${environment}`,
-    });
-
-    new cdk.CfnOutput(this, "ApiGatewayUrl", {
-      value: this.apiGateway.url,
-      description: "API Gateway URL",
-      exportName: `sesamy-encoding-api-${environment}`,
     });
 
     new cdk.CfnOutput(this, "DashboardUrl", {

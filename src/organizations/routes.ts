@@ -8,17 +8,24 @@ const OrganizationSchema = z.object({
   id: z.string(),
   name: z.string(),
   auth0_id: z.string(),
+  ttsModel: z.string().nullable().optional(),
+  sttModel: z.string().nullable().optional(),
+  autoTts: z.boolean().optional(),
 });
 
 const CreateOrganizationSchema = z.object({
   name: z.string().min(1).max(100),
   display_name: z.string().max(100).optional(),
+  ttsModel: z.string().optional(),
+  sttModel: z.string().optional(),
+  autoTts: z.boolean().optional(),
 });
 
-export function registerOrganizationRoutes(
-  app: OpenAPIHono<AppContext>,
+export function createOrganizationRoutes(
   organizationService: OrganizationService
 ) {
+  const app = new OpenAPIHono<AppContext>();
+
   // --------------------------------
   // GET /organizations
   // --------------------------------
@@ -177,7 +184,10 @@ export function registerOrganizationRoutes(
       const result = await organizationService.createOrganization(
         orgData.name,
         ctx.var.user.sub,
-        orgData.display_name
+        orgData.display_name,
+        orgData.ttsModel,
+        orgData.sttModel,
+        orgData.autoTts
       );
 
       return ctx.json(
@@ -190,4 +200,6 @@ export function registerOrganizationRoutes(
       );
     }
   );
+
+  return app;
 }

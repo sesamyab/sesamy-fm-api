@@ -79,10 +79,18 @@ class_name = "TranscriptionWorkflow"
 class_name = "EncodingContainer"
 name = "ENCODING_CONTAINER"
 
+[[durable_objects.bindings]]
+class_name = "MultipartUploadSession"
+name = "MULTIPART_UPLOAD_SESSION"
+
 # Durable Objects migrations
 [[migrations]]
 new_sqlite_classes = ["EncodingContainer"]
 tag = "v1"
+
+[[migrations]]
+new_sqlite_classes = ["MultipartUploadSession"]
+tag = "v2"
 
 # Cron triggers for background task processing
 [triggers]
