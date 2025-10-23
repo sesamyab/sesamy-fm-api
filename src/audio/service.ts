@@ -581,7 +581,9 @@ export class AudioService {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to initialize upload session: ${await response.text()}`);
+      throw new Error(
+        `Failed to initialize upload session: ${await response.text()}`
+      );
     }
 
     return {
@@ -602,7 +604,7 @@ export class AudioService {
     if (!stateResponse.ok) {
       throw new NotFoundError("Upload session not found or expired");
     }
-    const upload = await stateResponse.json<MultipartUploadState>();
+    const upload = (await stateResponse.json()) as MultipartUploadState;
     if (!upload) {
       throw new NotFoundError("Upload session not found or expired");
     }
@@ -628,7 +630,10 @@ export class AudioService {
       throw new Error(`Failed to store part: ${await addPartResponse.text()}`);
     }
 
-    const { received, total } = await addPartResponse.json<{ received: number; total: number }>();
+    const { received, total } = (await addPartResponse.json()) as {
+      received: number;
+      total: number;
+    };
 
     return {
       uploadId,
@@ -645,7 +650,7 @@ export class AudioService {
     if (!stateResponse.ok) {
       throw new NotFoundError("Upload session not found or expired");
     }
-    const upload = await stateResponse.json<MultipartUploadState>();
+    const upload = (await stateResponse.json()) as MultipartUploadState;
     if (!upload) {
       throw new NotFoundError("Upload session not found or expired");
     }
@@ -760,7 +765,7 @@ export class AudioService {
     if (!stateResponse.ok) {
       throw new NotFoundError("Upload session not found or expired");
     }
-    const upload = await stateResponse.json<MultipartUploadState>();
+    const upload = (await stateResponse.json()) as MultipartUploadState;
     if (!upload) {
       throw new NotFoundError("Upload session not found or expired");
     }
@@ -785,7 +790,7 @@ export class AudioService {
     if (!stateResponse.ok) {
       return null;
     }
-    const upload = await stateResponse.json<MultipartUploadState | null>();
+    const upload = (await stateResponse.json()) as MultipartUploadState | null;
     if (!upload) {
       return null;
     }
