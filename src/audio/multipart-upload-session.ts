@@ -1,4 +1,5 @@
 import { DurableObject } from "cloudflare:workers";
+import type { CloudflareEnv } from "../types/env";
 
 export interface MultipartUploadState {
   uploadId: string;
@@ -22,7 +23,7 @@ export interface MultipartUploadState {
  * - Strong consistency for concurrent chunk uploads
  * - Automatic cleanup via alarms
  */
-export class MultipartUploadSession extends DurableObject {
+export class MultipartUploadSession extends DurableObject<CloudflareEnv> {
   private static readonly EXPIRY_MS = 24 * 60 * 60 * 1000; // 24 hours
 
   /**
@@ -152,6 +153,7 @@ export class MultipartUploadSession extends DurableObject {
 
   /**
    * Alarm handler for automatic cleanup of expired sessions
+   * Now has access to the R2 bucket via this.env
    */
   async alarm(): Promise<void> {
     try {
@@ -169,9 +171,23 @@ export class MultipartUploadSession extends DurableObject {
           } (age: ${Math.round(age / 1000 / 60)} minutes)`
         );
 
-        // Note: We could abort the R2 multipart upload here, but that requires
-        // access to the R2 bucket binding, which Durable Objects don't have direct access to.
-        // The cleanup of orphaned R2 uploads should be handled by a separate cron job.
+        // Abort the R2 multipart upload
+        try {
+          const r2Upload = this.env.BUCKET.resumeMultipartUpload(
+            state.r2Key,
+            state.r2UploadId
+          );
+          await r2Upload.abort();
+          console.log(
+            `Aborted R2 multipart upload for session: ${state.uploadId}`
+          );
+        } catch (r2Error) {
+          // Log but don't fail - the R2 upload might already be completed/aborted
+          console.error(
+            `Failed to abort R2 upload for session ${state.uploadId}:`,
+            r2Error instanceof Error ? r2Error.message : r2Error
+          );
+        }
 
         await this.delete();
         console.log(
